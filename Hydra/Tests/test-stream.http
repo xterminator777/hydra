@@ -1,0 +1,9 @@
+### Test Stream Creation
+POST http://localhost:3000/api/streams/create
+Content-Type: application/json
+
+{
+  "categorySlug": "tech",
+  "title": "Late Night WebRTC Coding Session",
+  "userId": "e5c21e4b-be0f-4832-8ceb-75888544a0f7"
+}
