@@ -2,3 +2,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Add to app/globals.css */
+@keyframes bounceFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0px) scale(1.2);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-20px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-60px) scale(0.8);
+  }
+}
+
+.animate-bounce-float {
+  animation: bounceFloat 2.5s ease-out forwards;
+}
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spinSlow 6s linear infinite;
+}

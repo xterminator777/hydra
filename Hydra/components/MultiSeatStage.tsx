@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   useParticipants,
   VideoTrack,
@@ -10,14 +10,58 @@ import {
   useLocalParticipant,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
+import { GiftOverlay, GiftEvent } from './GiftOverlay';
 
 const TOTAL_SEATS = 9;
+
+const AVAILABLE_GIFTS = [
+  { type: 'rose', icon: '🌹', cost: 1 },
+  { type: 'diamond', icon: '💎', cost: 10 },
+  { type: 'rocket', icon: '🚀', cost: 100 },
+  { type: 'crown', icon: '👑', cost: 500 },
+] as const;
 
 export function MultiSeatStage() {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const { chatMessages, send } = useChat();
   const [messageText, setMessageText] = React.useState('');
+  const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
+
+  // Send a gift over LiveKit data channel
+  const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
+    const giftPayload = JSON.stringify({
+      isGift: true,
+      giftType: gift.type,
+      icon: gift.icon,
+      senderName: localParticipant.identity || 'Anonymous',
+    });
+
+    // Send payload using LiveKit chat stream
+    await send(giftPayload);
+
+    // Trigger locally for instant feedback
+    triggerGiftAnimation(
+      localParticipant.identity || 'You',
+      gift.type,
+      gift.icon
+    );
+  };
+
+  // Helper to append a new floating gift to state
+  const triggerGiftAnimation = (
+    senderName: string,
+    giftType: 'rose' | 'diamond' | 'rocket' | 'crown',
+    icon: string
+  ) => {
+    const newGift: GiftEvent = {
+      id: `${Date.now()}-${Math.random()}`,
+      senderName,
+      giftType,
+      icon,
+    };
+    setActiveGifts((prev) => [...prev, newGift]);
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +70,32 @@ export function MultiSeatStage() {
     setMessageText('');
   };
 
+  // Handle incoming data/chat messages for gift animations
+  React.useEffect(() => {
+    if (chatMessages.length === 0) return;
+    const latestMsg = chatMessages[chatMessages.length - 1];
+
+    try {
+      const parsed = JSON.parse(latestMsg.message);
+      if (parsed.isGift) {
+        triggerGiftAnimation(
+          latestMsg.from?.identity || 'Viewer',
+          parsed.giftType,
+          parsed.icon
+        );
+      }
+    } catch (e) {
+      // Regular text message, ignore JSON parse error
+    }
+  }, [chatMessages]);
+
+  const handleRemoveGift = (id: string) => {
+    setActiveGifts((prev) => prev.filter((g) => g.id !== id));
+  };
+
   // Function to handle joining the stage
   const handleJoinStage = async (seatIndex: number) => {
     try {
-      // Turn on local camera and microphone
       await localParticipant.setCameraEnabled(true);
       await localParticipant.setMicrophoneEnabled(true);
     } catch (error) {
@@ -39,33 +105,40 @@ export function MultiSeatStage() {
   };
 
   // 1. Separate the true Host from Guests/Viewers
-  // Prioritize host identity, fallback to first publisher, fallback to participant 0
   const hostParticipant =
     participants.find((p) => p.identity.toLowerCase().includes('host')) ||
     participants.find((p) => p.permissions?.canPublish) ||
     participants[0];
 
-  const guestParticipants = participants.filter((p) => p !== hostParticipant);
-
   const stageGuests = participants.filter((p) => {
     if (p === hostParticipant) return false;
-
-    // Check if participant is publishing or enabled camera/mic
-    const isPublishingVideo = p.isCameraEnabled;
-    const isPublishingAudio = p.isMicrophoneEnabled;
-
-    return isPublishingVideo || isPublishingAudio;
+    return p.isCameraEnabled || p.isMicrophoneEnabled;
   });
-
 
   // 2. Create fixed 9-seat array (Seat 0 = Host, Seats 1-8 = Guests)
   const seats = Array.from({ length: TOTAL_SEATS }, (_, index) => {
     if (index === 0) return hostParticipant;
-    return stageGuests[index - 1] || null;    // Seats 1-8 are ONLY active guests!
+    return stageGuests[index - 1] || null;
+  });
+
+  // Filter out raw gift JSON payloads from the chat message display
+  const textChatMessages = chatMessages.filter((msg) => {
+    try {
+      const parsed = JSON.parse(msg.message);
+      return !parsed.isGift;
+    } catch {
+      return true;
+    }
   });
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden relative font-sans">
+      {/* GIFT ANIMATION OVERLAY */}
+      <GiftOverlay
+        activeGifts={activeGifts}
+        onAnimationEnd={handleRemoveGift}
+      />
+
       {/* 1. TOP HEADER BAR */}
       <header className="px-4 py-3 bg-slate-950/40 backdrop-blur-md flex items-center justify-between z-10 border-b border-white/10">
         <div className="flex items-center gap-2">
@@ -108,26 +181,43 @@ export function MultiSeatStage() {
           }
 
           return (
-            <div
+            <button
               key={`empty-seat-${index}`}
-              onClick={() => {
-                // Here we can trigger a "Request to Join Stage" modal or toggle permissions
-                handleJoinStage(index)
-                alert(`Requesting to join Seat ${index}...`);
-              }}
-              className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50 border border-slate-800/80 rounded-lg text-slate-500 hover:bg-slate-800/50 transition cursor-pointer"
+              onClick={() => handleJoinStage(index)}
+              className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50 border border-slate-800/80 rounded-lg text-slate-500 hover:bg-slate-800/50 transition cursor-pointer group"
             >
-              <span className="text-lg font-light text-slate-400">+</span>
-              <span className="text-[10px] font-mono text-slate-500">Seat {index}</span>
-            </div>
+              <span className="text-lg font-light text-slate-400 group-hover:text-cyan-400">+</span>
+              <span className="text-[10px] font-mono text-slate-500 group-hover:text-slate-300">
+                Seat {index}
+              </span>
+            </button>
           );
         })}
+      </div>
+
+      {/* QUICK GIFTING BAR */}
+      <div className="px-3 py-2 bg-slate-950/90 border-t border-white/10 flex items-center justify-around z-20">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+          Send Gift:
+        </span>
+        {AVAILABLE_GIFTS.map((gift) => (
+          <button
+            key={gift.type}
+            onClick={() => handleSendGift(gift)}
+            className="flex items-center gap-1 bg-slate-800/80 hover:bg-pink-600/80 border border-white/10 hover:border-pink-400 px-2.5 py-1 rounded-full text-xs font-bold transition transform active:scale-95 shadow"
+          >
+            <span>{gift.icon}</span>
+            <span className="text-[9px] text-yellow-400 font-mono">
+              {gift.cost}🪙
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* 3. CHAT OVERLAY & INPUT */}
       <div className="p-3 bg-slate-950/60 backdrop-blur-md border-t border-white/10 z-10 mt-auto">
         <div className="h-28 overflow-y-auto mb-2 flex flex-col gap-1 text-xs">
-          {chatMessages.map((msg, idx) => (
+          {textChatMessages.map((msg, idx) => (
             <div key={idx} className="bg-slate-800/50 px-2 py-1 rounded">
               <span className="font-bold text-cyan-400">{msg.from?.identity}: </span>
               <span>{msg.message}</span>
@@ -155,7 +245,7 @@ export function MultiSeatStage() {
   );
 }
 
-{/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */ }
+{/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */}
 function SeatTile({
   participant,
   index,
