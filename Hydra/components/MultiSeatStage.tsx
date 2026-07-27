@@ -9,15 +9,14 @@ import {
   useChat,
   useLocalParticipant,
   useRoomContext,
-
+  RoomAudioRenderer, // 👈 1. ADDED ROOM AUDIO RENDERER
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
 import { EndStreamButton } from './EndStreamButton';
 import { useRouter } from 'next/navigation';
-import { RoomEvent } from 'livekit-client';
-const TOTAL_SEATS = 9;
 
+const TOTAL_SEATS = 9;
 
 const AVAILABLE_GIFTS = [
   { type: 'rose', icon: '🌹', cost: 1 },
@@ -33,6 +32,14 @@ export function MultiSeatStage() {
   const [messageText, setMessageText] = React.useState('');
   const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
 
+  // 👈 2. AUTO-ENABLE MICROPHONE IF LOCAL USER IS ON STAGE / HOST
+  React.useEffect(() => {
+    if (localParticipant) {
+      localParticipant.setMicrophoneEnabled(true).catch((err) => {
+        console.warn("Failed to auto-enable microphone on join:", err);
+      });
+    }
+  }, [localParticipant]);
 
   // Send a gift over LiveKit data channel
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
@@ -99,14 +106,12 @@ export function MultiSeatStage() {
           {isHost && (
             <div className="flex items-center gap-1">
               <span className="text-cyan-400 font-bold text-[8px]">HOST</span>
-
             </div>
           )}
         </div>
-
-      </div>)
+      </div>
+    );
   }
-
 
   // Helper to append a new floating gift to state
   const triggerGiftAnimation = (
@@ -168,8 +173,6 @@ export function MultiSeatStage() {
   const hostParticipant =
     participants.find((p) => p.identity.toLowerCase().startsWith('host_')) ||
     participants.find((p) => p.identity.toLowerCase().includes('host'));
-
-
 
   // 2. FILTER GUEST SEATS 1-8
   const stageGuests = participants.filter((p) => {
@@ -246,6 +249,9 @@ export function MultiSeatStage() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden relative font-sans">
+      {/* 🔊 MANDATORY: Plays all incoming audio tracks from stage participants */}
+      <RoomAudioRenderer />
+
       {/* GIFT ANIMATION OVERLAY */}
       <GiftOverlay
         activeGifts={activeGifts}
@@ -360,4 +366,3 @@ export function MultiSeatStage() {
     </div>
   );
 }
-
