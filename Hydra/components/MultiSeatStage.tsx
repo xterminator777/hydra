@@ -104,15 +104,32 @@ export function MultiSeatStage() {
     }
   };
 
-  // 1. Separate the true Host from Guests/Viewers
+  // 1. ANCHOR SEAT 0 (Host is identified by identity starting with 'host_')
   const hostParticipant =
+    participants.find((p) => p.identity.toLowerCase().startsWith('host_')) ||
     participants.find((p) => p.identity.toLowerCase().includes('host')) ||
-    participants.find((p) => p.permissions?.canPublish) ||
     participants[0];
 
+
+
+  // 2. FILTER GUEST SEATS 1-8
   const stageGuests = participants.filter((p) => {
+    // Host stays in Seat 0
     if (p === hostParticipant) return false;
-    return p.isCameraEnabled || p.isMicrophoneEnabled;
+
+    // Check if participant is actively publishing media tracks
+    let hasPublishedVideo = false;
+    let hasPublishedAudio = false;
+
+    p.videoTrackPublications.forEach((track) => {
+      if (track && !track.isMuted) hasPublishedVideo = true;
+    });
+
+    p.audioTrackPublications.forEach((track) => {
+      if (track && !track.isMuted) hasPublishedAudio = true;
+    });
+
+    return hasPublishedVideo || hasPublishedAudio;
   });
 
   // 2. Create fixed 9-seat array (Seat 0 = Host, Seats 1-8 = Guests)
@@ -245,7 +262,7 @@ export function MultiSeatStage() {
   );
 }
 
-{/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */}
+{/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */ }
 function SeatTile({
   participant,
   index,

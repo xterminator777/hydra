@@ -19,7 +19,7 @@ export async function POST(request) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await request.json();
-    const { categorySlug, title, userId } = body;
+    const { categorySlug, title, userId, participantName } = body;
 
     if (!categorySlug || !title || !userId) {
       return NextResponse.json(
@@ -76,8 +76,14 @@ export async function POST(request) {
       );
     }
 
+    // Fall back to userId or body.username if participantName is missing from request
+    const rawName = participantName || body.hostName || body.username || userId;
+
+    // Always format as host in the create route
+    const formattedIdentity = `host_${rawName.replace(/^host_/, '')}`;
+
     const at = new AccessToken(apiKey, apiSecret, {
-      identity: userId,
+      identity: formattedIdentity,
       ttl: '2h',
       metadata: JSON.stringify({
         role: 'host',
@@ -107,10 +113,10 @@ export async function POST(request) {
   } catch (err) {
     console.error('🔥 Stream Endpoint Exception:', err);
     return NextResponse.json(
-      { 
+      {
         error: 'Unhandled Endpoint Error',
         message: err.message,
-        stack: err.stack 
+        stack: err.stack
       },
       { status: 500 }
     );
