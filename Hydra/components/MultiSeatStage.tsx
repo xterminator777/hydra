@@ -8,11 +8,16 @@ import {
   useTracks,
   useChat,
   useLocalParticipant,
+  useRoomContext,
+
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
 import { EndStreamButton } from './EndStreamButton';
+import { useRouter } from 'next/navigation';
+import { RoomEvent } from 'livekit-client';
 const TOTAL_SEATS = 9;
+
 
 const AVAILABLE_GIFTS = [
   { type: 'rose', icon: '🌹', cost: 1 },
@@ -27,6 +32,7 @@ export function MultiSeatStage() {
   const { chatMessages, send } = useChat();
   const [messageText, setMessageText] = React.useState('');
   const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
+
 
   // Send a gift over LiveKit data channel
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
@@ -47,6 +53,60 @@ export function MultiSeatStage() {
       gift.icon
     );
   };
+
+  {/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */ }
+  function SeatTile({
+    participant,
+    index,
+    isHost,
+  }: {
+    participant: any;
+    index: number;
+    isHost?: boolean;
+  }) {
+    const cameraTracks = useTracks([Track.Source.Camera], {
+      onlySubscribed: false,
+    }).filter((trackRef) => trackRef.participant.identity === participant.identity);
+
+    const cameraTrack = cameraTracks[0];
+    const isMuted = !participant.isMicrophoneEnabled;
+
+    return (
+      <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
+        {cameraTrack ? (
+          <VideoTrack
+            trackRef={cameraTrack}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
+            {participant.identity?.charAt(0).toUpperCase() || 'U'}
+          </div>
+        )}
+
+        {/* Mic Status */}
+        {isMuted && (
+          <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
+            🔇
+          </div>
+        )}
+
+        {/* Bottom Label Tag */}
+        <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
+          <span className="font-semibold truncate max-w-[50px] text-white">
+            {participant.identity || `Guest ${index}`}
+          </span>
+          {isHost && (
+            <div className="flex items-center gap-1">
+              <span className="text-cyan-400 font-bold text-[8px]">HOST</span>
+
+            </div>
+          )}
+        </div>
+
+      </div>)
+  }
+
 
   // Helper to append a new floating gift to state
   const triggerGiftAnimation = (
@@ -107,8 +167,7 @@ export function MultiSeatStage() {
   // 1. ANCHOR SEAT 0 (Host is identified by identity starting with 'host_')
   const hostParticipant =
     participants.find((p) => p.identity.toLowerCase().startsWith('host_')) ||
-    participants.find((p) => p.identity.toLowerCase().includes('host')) ||
-    participants[0];
+    participants.find((p) => p.identity.toLowerCase().includes('host'));
 
 
 
@@ -148,6 +207,43 @@ export function MultiSeatStage() {
     }
   });
 
+  // 1. Get room name and router
+  const roomName = "stream_stage";
+  const room = useRoomContext();
+  const router = useRouter();
+
+  // 2. Check if local user is the host
+  const isHost = Boolean(
+    localParticipant?.identity &&
+    hostParticipant?.identity &&
+    localParticipant.identity === hostParticipant.identity
+  );
+
+  // 3. Kick viewers to home page when stream ends / room deletes
+  React.useEffect(() => {
+    if (!room) return;
+    const handleDisconnected = () => {
+      router.push('/');
+    };
+    // Fail-safe: Listen for broadcast message sent right before room deletion
+    const handleDataReceived = (payload: Uint8Array) => {
+      try {
+        const decoder = new TextDecoder();
+        const str = decoder.decode(payload);
+        const data = JSON.parse(str);
+        if (data.type === 'STREAM_ENDED') {
+          router.push('/');
+        }
+      } catch {
+        // Ignore non-JSON or unrelated messages
+      }
+    };
+    room.on(RoomEvent.Disconnected, handleDisconnected);
+    return () => {
+      room.off(RoomEvent.Disconnected, handleDisconnected);
+    };
+  }, [room, router]);
+
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden relative font-sans">
       {/* GIFT ANIMATION OVERLAY */}
@@ -167,7 +263,7 @@ export function MultiSeatStage() {
             <span className="text-[10px] text-slate-400 font-mono">ID: stream_stage</span>
           </div>
           <button className="ml-1 bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs px-2 py-0.5 rounded-full">
-            +
+
           </button>
         </div>
 
@@ -179,10 +275,10 @@ export function MultiSeatStage() {
           <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
             👥 {participants.length}
           </span>
+          {/* 🔴 END STREAM BUTTON HERE */}
+          {/* 🔒 ONLY RENDER END STREAM BUTTON IF USER IS THE HOST */}
+          {isHost && <EndStreamButton streamId="stream_stage" />}
         </div>
-        {/* 🔴 END STREAM BUTTON HERE */}
-        <EndStreamButton streamId="stream_stage" />
-        <div/>
       </header>
 
       {/* 2. 3x3 MULTI-GUEST SEAT GRID */}
@@ -265,50 +361,3 @@ export function MultiSeatStage() {
   );
 }
 
-{/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */ }
-function SeatTile({
-  participant,
-  index,
-  isHost,
-}: {
-  participant: any;
-  index: number;
-  isHost?: boolean;
-}) {
-  const cameraTracks = useTracks([Track.Source.Camera], {
-    onlySubscribed: false,
-  }).filter((trackRef) => trackRef.participant.identity === participant.identity);
-
-  const cameraTrack = cameraTracks[0];
-  const isMuted = !participant.isMicrophoneEnabled;
-
-  return (
-    <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
-      {cameraTrack ? (
-        <VideoTrack
-          trackRef={cameraTrack}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      ) : (
-        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
-          {participant.identity?.charAt(0).toUpperCase() || 'U'}
-        </div>
-      )}
-
-      {/* Mic Status */}
-      {isMuted && (
-        <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
-          🔇
-        </div>
-      )}
-
-      {/* Bottom Label Tag */}
-      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
-        <span className="font-semibold truncate max-w-[50px] text-white">
-          {participant.identity || `Guest ${index}`}
-        </span>
-        {isHost && <span className="text-cyan-400 font-bold text-[8px]">HOST</span>}
-      </div>
-    </div>
-  );
-}
