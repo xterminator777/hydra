@@ -11,7 +11,7 @@ import {
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
-
+import { EndStreamButton } from './EndStreamButton';
 const TOTAL_SEATS = 9;
 
 const AVAILABLE_GIFTS = [
@@ -180,6 +180,9 @@ export function MultiSeatStage() {
             👥 {participants.length}
           </span>
         </div>
+        {/* 🔴 END STREAM BUTTON HERE */}
+        <EndStreamButton streamId="stream_stage" />
+        <div/>
       </header>
 
       {/* 2. 3x3 MULTI-GUEST SEAT GRID */}
