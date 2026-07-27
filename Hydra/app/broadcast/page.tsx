@@ -7,7 +7,7 @@ import { KeyboardShortcuts } from '@/lib/KeyboardShortcuts';
 import { RecordingIndicator } from '@/lib/RecordingIndicator';
 import { SettingsMenu } from '@/lib/SettingsMenu';
 import { ConnectionDetails } from '@/lib/types';
-import { supabase } from '@/lib/supabaseClient'; // 👈 1. Import Supabase
+import { supabase } from '@/lib/supabaseClient';
 import { EntranceBanner } from '@/components/EntranceBanner';
 import {
   formatChatMessageLinks,
@@ -57,7 +57,7 @@ export function StreamStudioPage(props: {
   const [hostUsername, setHostUsername] = React.useState<string>('Host');
   const [userId, setUserId] = React.useState<string | null>(null);
 
-  // 2. Fetch authenticated host details on mount
+  // Fetch authenticated host details on mount
   React.useEffect(() => {
     async function loadHostDetails() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -98,7 +98,6 @@ export function StreamStudioPage(props: {
     }
 
     try {
-      // Use chosen input or fallback to loaded profile handle
       const activeName = values.username || hostUsername || 'Host';
 
       const response = await fetch('/api/streams/create', {
@@ -107,8 +106,8 @@ export function StreamStudioPage(props: {
         body: JSON.stringify({
           categorySlug,
           title: streamTitle,
-          userId: userId || undefined, // 👈 Dynamically passes host UUID
-          participantName: activeName, // 👈 Passes host handle
+          userId: userId || undefined,
+          participantName: activeName,
           isHost: true,
         }),
       });
@@ -354,8 +353,6 @@ function VideoConferenceComponent(props: {
     </div>
   );
 }
-
-
 
 // Default export required by Next.js App Router
 export default function BroadcastPage() {
