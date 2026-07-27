@@ -144,19 +144,19 @@ export function StreamStudioPage(props: {
     <main data-lk-theme="default" style={{ height: '100%' }}>
       {connectionDetails === undefined || preJoinChoices === undefined ? (
         <div style={{ display: 'grid', placeItems: 'center', height: '100%', padding: '1rem' }}>
-          <div className="w-full max-w-md bg-gray-900 text-white rounded-xl p-6 border border-gray-800 shadow-2xl">
-            <h2 className="text-xl font-bold mb-1">Host Studio Setup</h2>
-            <p className="text-gray-400 text-xs mb-4">Set your stream info before joining the stage</p>
+          <div className="w-full max-w-md bg-slate-900 text-white rounded-2xl p-6 border border-slate-700/80 shadow-2xl">
+            <h2 className="text-xl font-bold mb-1 text-white">Host Studio Setup</h2>
+            <p className="text-slate-400 text-xs mb-5">Set your stream details before joining the stage</p>
 
             {apiError && (
-              <div className="mb-4 p-3 bg-red-950/60 border border-red-500/50 rounded text-red-400 text-xs">
+              <div className="mb-4 p-3 bg-red-950/80 border border-red-500/50 rounded-xl text-red-400 text-xs">
                 {apiError}
               </div>
             )}
 
-            <div className="space-y-3 mb-6">
+            <div className="space-y-4 mb-6">
               <div>
-                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">
+                <label className="block text-xs font-semibold uppercase text-slate-300 mb-1.5">
                   Stream Title
                 </label>
                 <input
@@ -165,18 +165,18 @@ export function StreamStudioPage(props: {
                   value={streamTitle}
                   onChange={(e) => setStreamTitle(e.target.value)}
                   placeholder="e.g. Building WebRTC Chat Apps"
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-red-500"
+                  className="w-full bg-slate-950 text-white placeholder-slate-400 border-2 border-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30 rounded-xl px-4 py-2.5 text-sm font-medium outline-none transition"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase text-gray-400 mb-1">
+                <label className="block text-xs font-semibold uppercase text-slate-300 mb-1.5">
                   Category
                 </label>
                 <select
                   value={categorySlug}
                   onChange={(e) => setCategorySlug(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-red-500"
+                  className="w-full bg-slate-950 text-white border-2 border-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30 rounded-xl px-4 py-2.5 text-sm font-medium outline-none transition cursor-pointer"
                 >
                   <option value="tech">Tech</option>
                   <option value="music">Music</option>
@@ -186,14 +186,17 @@ export function StreamStudioPage(props: {
               </div>
             </div>
 
+          <div className="lk-prejoin-wrapper mt-4">
             <PreJoin
               defaults={preJoinDefaults}
               onSubmit={handlePreJoinSubmit}
               onError={handlePreJoinError}
             />
-
+          </div>
             {isSubmitting && (
-              <p className="text-center text-xs text-gray-400 mt-2">Provisioning stage & LiveKit token...</p>
+              <p className="text-center text-xs text-cyan-400 mt-3 font-semibold animate-pulse">
+                Provisioning stage & LiveKit token...
+              </p>
             )}
           </div>
         </div>

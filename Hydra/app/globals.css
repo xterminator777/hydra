@@ -39,3 +39,118 @@
 .animate-spin-slow {
   animation: spinSlow 6s linear infinite;
 }
+
+/* ==========================================================================
+   LIVEKIT PREJOIN OVERRIDES (COMPACT & SEAMLESS)
+   ========================================================================== */
+
+/* Main container tightness */
+.lk-prejoin {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.5rem !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Force device menu blocks to stay compact and inline */
+.lk-prejoin .lk-device-menu,
+.lk-prejoin .lk-button-group-container,
+.lk-prejoin .lk-button-group {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  width: 100% !important;
+  gap: 0.25rem !important;
+  margin: 0 !important;
+}
+
+/* Clean up individual Microphone & Camera controls */
+.lk-prejoin .lk-button,
+.lk-prejoin .lk-device-select,
+.lk-prejoin button.lk-button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0 0.75rem !important;
+  background-color: #020617 !important; /* bg-slate-950 */
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important; /* border-slate-700 */
+  border-radius: 0.5rem !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+
+/* Hover effects */
+.lk-prejoin .lk-button:hover {
+  background-color: #0f172a !important;
+  border-color: #475569 !important;
+}
+
+/* Fix dropdown arrow buttons to sit right next to the label */
+.lk-prejoin .lk-button-group > button:last-child {
+  width: 38px !important;
+  min-width: 38px !important;
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+/* Form inputs & controls */
+.lk-prejoin .lk-form-control {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.5rem !important;
+  width: 100% !important;
+  margin-top: 0.25rem !important;
+}
+
+/* Username input field */
+.lk-prejoin input[type='text'],
+.lk-prejoin .lk-form-control input {
+  width: 100% !important;
+  height: 40px !important;
+  background-color: #020617 !important;
+  border: 1.5px solid #334155 !important;
+  border-radius: 0.5rem !important;
+  padding: 0 0.75rem !important;
+  color: #ffffff !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+}
+
+.lk-prejoin input[type='text']:focus {
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2) !important;
+}
+
+/* Submit "Join Room" button */
+.lk-prejoin button[type='submit'],
+.lk-prejoin .lk-join-button {
+  width: 100% !important;
+  height: 44px !important;
+  background: linear-gradient(to right, #06b6d4, #2563eb) !important;
+  color: #000000 !important;
+  font-weight: 800 !important;
+  font-size: 0.875rem !important;
+  border-radius: 0.5rem !important;
+  border: none !important;
+  cursor: pointer !important;
+  margin-top: 0.25rem !important;
+  transition: transform 0.15s ease, opacity 0.15s ease !important;
+}
+
+.lk-prejoin button[type='submit']:hover {
+  opacity: 0.95 !important;
+}
+
+.lk-prejoin button[type='submit']:active {
+  transform: scale(0.98) !important;
+}
