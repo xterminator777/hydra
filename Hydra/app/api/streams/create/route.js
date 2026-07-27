@@ -21,6 +21,15 @@ export async function POST(request) {
     const body = await request.json();
     const { categorySlug, title, userId, participantName } = body;
 
+    // 1. Guard against missing or unauthenticated userId
+    if (!userId || userId === 'guest_user' || userId.startsWith('guest_')) {
+      return NextResponse.json(
+        { error: 'You must be logged in to start a broadcast stream.' },
+        { status: 401 }
+      );
+    }
+
+
     if (!categorySlug || !title || !userId) {
       return NextResponse.json(
         { error: 'Missing required fields: categorySlug, title, or userId' },
@@ -65,6 +74,21 @@ export async function POST(request) {
       );
     }
 
+
+    // 1. Fetch user profile if userId was passed
+    let hostUsername = participantName;
+
+    if (userId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username, avatar_url')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profile?.username) {
+        hostUsername = profile.username;
+      }
+    }
     // 4. Issue LiveKit JWT Token
     const apiKey = process.env.LIVEKIT_API_KEY?.trim();
     const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
@@ -77,7 +101,7 @@ export async function POST(request) {
     }
 
     // Fall back to userId or body.username if participantName is missing from request
-    const rawName = participantName || body.hostName || body.username || userId;
+    const rawName = participantName || body.hostName || body.username || userId || 'Host';
 
     // Always format as host in the create route
     const formattedIdentity = `host_${rawName.replace(/^host_/, '')}`;

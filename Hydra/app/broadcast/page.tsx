@@ -7,6 +7,7 @@ import { KeyboardShortcuts } from '@/lib/KeyboardShortcuts';
 import { RecordingIndicator } from '@/lib/RecordingIndicator';
 import { SettingsMenu } from '@/lib/SettingsMenu';
 import { ConnectionDetails } from '@/lib/types';
+import { supabase } from '@/lib/supabaseClient'; // 👈 1. Import Supabase
 import {
   formatChatMessageLinks,
   LocalUserChoices,
@@ -30,6 +31,7 @@ import { useRouter } from 'next/navigation';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import { useLowCPUOptimizer } from '@/lib/usePerfomanceOptimiser';
 import { MultiSeatStage } from '../../components/MultiSeatStage';
+
 const SHOW_SETTINGS_MENU = process.env.NEXT_PUBLIC_SHOW_SETTINGS_MENU === 'true';
 
 export function StreamStudioPage(props: {
@@ -50,27 +52,62 @@ export function StreamStudioPage(props: {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [apiError, setApiError] = React.useState<string | null>(null);
 
+  // User & Profile State
+  const [hostUsername, setHostUsername] = React.useState<string>('Host');
+  const [userId, setUserId] = React.useState<string | null>(null);
+
+  // 2. Fetch authenticated host details on mount
+  React.useEffect(() => {
+    async function loadHostDetails() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setUserId(user.id);
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profile?.username) {
+        setHostUsername(profile.username);
+      }
+    }
+
+    loadHostDetails();
+  }, []);
+
   const preJoinDefaults = React.useMemo(() => {
     return {
-      username: '',
+      username: hostUsername,
       videoEnabled: true,
       audioEnabled: true,
     };
-  }, []);
+  }, [hostUsername]);
 
   const handlePreJoinSubmit = React.useCallback(async (values: LocalUserChoices) => {
     setPreJoinChoices(values);
     setIsSubmitting(true);
     setApiError(null);
 
+    if (!userId) {
+      setApiError('You must be logged in with a valid account to host a live stream.');
+      return;
+    }
+
     try {
+      // Use chosen input or fallback to loaded profile handle
+      const activeName = values.username || hostUsername || 'Host';
+
       const response = await fetch('/api/streams/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           categorySlug,
           title: streamTitle,
-          userId: 'e5c21e4b-be0f-4832-8ceb-75888544a0f7',
+          userId: userId || undefined, // 👈 Dynamically passes host UUID
+          participantName: activeName, // 👈 Passes host handle
           isHost: true,
         }),
       });
@@ -91,7 +128,7 @@ export function StreamStudioPage(props: {
         serverUrl: livekitUrl,
         roomName: data.roomName,
         participantToken: data.token,
-        participantName: values.username || 'Host',
+        participantName: activeName,
       });
     } catch (err: any) {
       console.error('Error creating stream:', err);
@@ -99,7 +136,7 @@ export function StreamStudioPage(props: {
     } finally {
       setIsSubmitting(false);
     }
-  }, [categorySlug, streamTitle]);
+  }, [categorySlug, streamTitle, userId, hostUsername]);
 
   const handlePreJoinError = React.useCallback((e: any) => console.error(e), []);
 

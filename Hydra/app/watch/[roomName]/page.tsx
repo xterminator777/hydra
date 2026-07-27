@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import { LiveKitRoom } from '@livekit/components-react';
 import { MultiSeatStage } from '@/components/MultiSeatStage';
+import { supabase } from '@/lib/supabaseClient'; // 👈 1. Import Supabase client
 
 export default function WatchPage({ params }: { params: Promise<{ roomName: string }> }) {
   // 1. Unwrap the dynamic route params Promise (Next.js 15 style)
@@ -12,17 +13,37 @@ export default function WatchPage({ params }: { params: Promise<{ roomName: stri
   const [token, setToken] = useState<string>('');
 
   useEffect(() => {
-    // Generate a quick guest fallback name if none exists
-    const guestName = `Guest_${Math.floor(1000 + Math.random() * 9000)}`;
-
     async function fetchViewerToken() {
       try {
-        const res = await fetch('/api/token', {
+        // 2. Fetch authenticated user from Supabase
+        const { data: { user } } = await supabase.auth.getUser();
+
+        let activeName = `Guest_${Math.floor(1000 + Math.random() * 9000)}`;
+        let userId: string | undefined = undefined;
+
+        if (user) {
+          userId = user.id;
+
+          // Query user profile handle
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profile?.username) {
+            activeName = profile.username;
+          }
+        }
+
+        // 3. Call stream join endpoint passing userId & profile handle
+        const res = await fetch('/api/streams/join', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            roomName: roomName || 'main-room', // Fallback room name
-            participantName: guestName,        // Fallback participant name
+            roomName: roomName || 'main-room',
+            participantName: activeName,
+            userId: userId,
             isHost: false,
           }),
         });
