@@ -186,13 +186,13 @@ export function StreamStudioPage(props: {
               </div>
             </div>
 
-          <div className="lk-prejoin-wrapper mt-4">
-            <PreJoin
-              defaults={preJoinDefaults}
-              onSubmit={handlePreJoinSubmit}
-              onError={handlePreJoinError}
-            />
-          </div>
+            <div className="lk-prejoin-wrapper mt-4">
+              <PreJoin
+                defaults={preJoinDefaults}
+                onSubmit={handlePreJoinSubmit}
+                onError={handlePreJoinError}
+              />
+            </div>
             {isSubmitting && (
               <p className="text-center text-xs text-cyan-400 mt-3 font-semibold animate-pulse">
                 Provisioning stage & LiveKit token...
@@ -231,19 +231,17 @@ function VideoConferenceComponent(props: {
   const [e2eeSetupComplete, setE2eeSetupComplete] = React.useState(false);
 
   const roomOptions = React.useMemo((): RoomOptions => {
-    let videoCodec: VideoCodec | undefined = props.options.codec ? props.options.codec : 'vp9';
+    let videoCodec: VideoCodec | undefined = props.options.codec ? props.options.codec : 'vp8';
     if (e2eeEnabled && (videoCodec === 'av1' || videoCodec === 'vp9')) {
       videoCodec = undefined;
     }
     const videoCaptureDefaults: VideoCaptureOptions = {
       deviceId: props.userChoices.videoDeviceId ?? undefined,
-      resolution: props.options.hq ? VideoPresets.h2160 : VideoPresets.h720,
+      resolution: VideoPresets.h720,
     };
     const publishDefaults: TrackPublishDefaults = {
-      dtx: false,
-      videoSimulcastLayers: props.options.hq
-        ? [VideoPresets.h1080, VideoPresets.h720]
-        : [VideoPresets.h540, VideoPresets.h216],
+      dtx: true,
+      videoSimulcastLayers: [VideoPresets.h720],
       red: !e2eeEnabled,
       videoCodec,
     };
@@ -253,8 +251,9 @@ function VideoConferenceComponent(props: {
       audioCaptureDefaults: {
         deviceId: props.userChoices.audioDeviceId ?? undefined,
       },
-      adaptiveStream: true,
-      dynacast: true,
+      // Turned off dynamic layer switching to prevent microsecond black flashes when talking
+      adaptiveStream: false,
+      dynacast: false,
       e2ee: keyProvider && worker && e2eeEnabled ? { keyProvider, worker } : undefined,
       singlePeerConnection: props.options.singlePeerConnection,
     };
@@ -363,7 +362,7 @@ export default function BroadcastPage() {
     <StreamStudioPage
       roomName="studio-stage"
       hq={true}
-      codec="vp9"
+      codec="vp8"
       singlePeerConnection={false}
     />
   );
