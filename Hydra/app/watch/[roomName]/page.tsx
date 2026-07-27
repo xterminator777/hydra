@@ -4,6 +4,7 @@ import { useEffect, useState, use } from 'react';
 import { LiveKitRoom } from '@livekit/components-react';
 import { MultiSeatStage } from '@/components/MultiSeatStage';
 import { supabase } from '@/lib/supabaseClient'; // 👈 1. Import Supabase client
+import { EntranceBanner } from '@/components/EntranceBanner';
 
 export default function WatchPage({ params }: { params: Promise<{ roomName: string }> }) {
   // 1. Unwrap the dynamic route params Promise (Next.js 15 style)
@@ -83,6 +84,7 @@ export default function WatchPage({ params }: { params: Promise<{ roomName: stri
         serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
         connect={true}
       >
+        <EntranceBanner />
         <MultiSeatStage />
       </LiveKitRoom>
     </div>

@@ -8,6 +8,7 @@ import { RecordingIndicator } from '@/lib/RecordingIndicator';
 import { SettingsMenu } from '@/lib/SettingsMenu';
 import { ConnectionDetails } from '@/lib/types';
 import { supabase } from '@/lib/supabaseClient'; // 👈 1. Import Supabase
+import { EntranceBanner } from '@/components/EntranceBanner';
 import {
   formatChatMessageLinks,
   LocalUserChoices,
@@ -344,6 +345,7 @@ function VideoConferenceComponent(props: {
   return (
     <div className="lk-room-container">
       <RoomContext.Provider value={room}>
+        <EntranceBanner />
         <KeyboardShortcuts />
         <MultiSeatStage />
         <DebugMode />
