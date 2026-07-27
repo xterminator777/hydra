@@ -26,11 +26,13 @@ export async function POST(req: NextRequest) {
     const at = new AccessToken(apiKey, apiSecret, {
       identity,
     });
-
+// GRANT PERMISSIONS:
+    // We allow publishing on the token level, but the viewer connects with video/audio OFF.
+    // They only publish when explicitly calling setCameraEnabled(true) on "+ Join"!
     at.addGrant({
       room,
       roomJoin: true,
-      canPublish: hostStatus,    // Viewers (isHost: false) CANNOT publish video/audio
+      canPublish: true,    // <-- Set to true so guests can publish when they tap Join
       canPublishData: true,     // Viewers CAN publish chat messages
       canSubscribe: true,       // Viewers CAN watch host video/audio
     });

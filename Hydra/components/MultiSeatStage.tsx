@@ -7,6 +7,7 @@ import {
   ParticipantContext,
   useTracks,
   useChat,
+  useLocalParticipant,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 
@@ -14,6 +15,7 @@ const TOTAL_SEATS = 9;
 
 export function MultiSeatStage() {
   const participants = useParticipants();
+  const { localParticipant } = useLocalParticipant();
   const { chatMessages, send } = useChat();
   const [messageText, setMessageText] = React.useState('');
 
@@ -22,6 +24,18 @@ export function MultiSeatStage() {
     if (!messageText.trim()) return;
     await send(messageText);
     setMessageText('');
+  };
+
+  // Function to handle joining the stage
+  const handleJoinStage = async (seatIndex: number) => {
+    try {
+      // Turn on local camera and microphone
+      await localParticipant.setCameraEnabled(true);
+      await localParticipant.setMicrophoneEnabled(true);
+    } catch (error) {
+      console.error('Failed to enable camera/mic:', error);
+      alert('Could not access camera/microphone to join the stage.');
+    }
   };
 
   // 1. Separate the true Host from Guests/Viewers
@@ -98,6 +112,7 @@ export function MultiSeatStage() {
               key={`empty-seat-${index}`}
               onClick={() => {
                 // Here we can trigger a "Request to Join Stage" modal or toggle permissions
+                handleJoinStage(index)
                 alert(`Requesting to join Seat ${index}...`);
               }}
               className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50 border border-slate-800/80 rounded-lg text-slate-500 hover:bg-slate-800/50 transition cursor-pointer"
