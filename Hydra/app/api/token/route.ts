@@ -1,48 +1,44 @@
+// app/api/token/route.ts
 import { AccessToken } from 'livekit-server-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Extract parameters from the request body
     const body = await req.json();
     const { roomName, participantName, isHost } = body;
 
-    // Default to viewer (false) if isHost isn't explicitly passed
+    // Use provided values or intelligent fallbacks
+    const room = roomName || 'main-room';
+    const identity = participantName || `Viewer_${Math.floor(1000 + Math.random() * 9000)}`;
     const hostStatus = Boolean(isHost);
-
-    if (!roomName || !participantName) {
-      return NextResponse.json(
-        { error: 'Missing roomName or participantName' },
-        { status: 400 }
-      );
-    }
 
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     if (!apiKey || !apiSecret) {
       return NextResponse.json(
-        { error: 'Server misconfigured: missing LiveKit credentials' },
+        { error: 'Server configuration error: missing LiveKit API credentials in .env.local' },
         { status: 500 }
       );
     }
 
+    // Generate JWT token
     const at = new AccessToken(apiKey, apiSecret, {
-      identity: participantName,
+      identity,
     });
 
-    // 2. Grant permissions
     at.addGrant({
-      room: roomName,
+      room,
       roomJoin: true,
-      canPublish: hostStatus,     // Uses the extracted hostStatus variable
-      canPublishData: true,      // Allows sending chat messages
-      canSubscribe: true,        // Allows watching the broadcast
+      canPublish: hostStatus,    // Viewers (isHost: false) CANNOT publish video/audio
+      canPublishData: true,     // Viewers CAN publish chat messages
+      canSubscribe: true,       // Viewers CAN watch host video/audio
     });
 
     const token = await at.toJwt();
     return NextResponse.json({ token });
   } catch (error) {
+    console.error('Token generation error:', error);
     return NextResponse.json(
       { error: 'Failed to generate token' },
       { status: 500 }

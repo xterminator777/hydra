@@ -71,6 +71,7 @@ export function StreamStudioPage(props: {
           categorySlug,
           title: streamTitle,
           userId: 'e5c21e4b-be0f-4832-8ceb-75888544a0f7',
+          isHost: true,
         }),
       });
 
