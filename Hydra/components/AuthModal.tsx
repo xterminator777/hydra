@@ -23,12 +23,16 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     setErrorMsg(null);
     setLoading(true);
 
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
     try {
       if (isSignUp) {
         // 1. Sign Up New User
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: `${siteUrl}/auth/callback`,
+          },
         });
         if (error) throw error;
       } else {
