@@ -1,22 +1,36 @@
 'use client';
 
 import React from 'react';
-import { useParticipants, ParticipantTile, RoomContext } from '@livekit/components-react';
+import {
+  useParticipants,
+  VideoTrack,
+  ParticipantContext,
+  useTracks,
+  useChat,
+} from '@livekit/components-react';
 import { Track } from 'livekit-client';
 
 const TOTAL_SEATS = 9;
 
 export function MultiSeatStage() {
   const participants = useParticipants();
+  const { chatMessages, send } = useChat();
+  const [messageText, setMessageText] = React.useState('');
 
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageText.trim()) return;
+    await send(messageText);
+    setMessageText('');
+  };
   // Create an array of 9 slots
   const seats = Array.from({ length: TOTAL_SEATS }, (_, index) => {
-    return participants[index] || null; // Assign participant if present, otherwise null
+    return participants[index] || null;
   });
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden relative font-sans">
-      
+
       {/* 1. TOP HEADER BAR */}
       <header className="px-4 py-3 bg-slate-950/40 backdrop-blur-md flex items-center justify-between z-10 border-b border-white/10">
         <div className="flex items-center gap-2">
@@ -25,7 +39,7 @@ export function MultiSeatStage() {
           </div>
           <div>
             <h1 className="text-xs font-bold leading-none">Zodiac Room - Live</h1>
-            <span className="text-[10px] text-slate-400 font-mono">ID: stream_tech_01</span>
+            <span className="text-[10px] text-slate-400 font-mono">ID: stream_stage</span>
           </div>
           <button className="ml-1 bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs px-2 py-0.5 rounded-full">
             +
@@ -55,33 +69,9 @@ export function MultiSeatStage() {
             >
               {participant ? (
                 /* ACTIVE SEAT WITH PARTICIPANT */
-                <div className="w-full h-full relative flex items-center justify-center">
-                  <ParticipantTile
-                    participant={participant}
-                    source={Track.Source.Camera}
-                    className="w-full h-full object-cover"
-                  />
-
-                  {/* Level & Points Badges */}
-                  <div className="absolute top-1 left-1 bg-yellow-500/90 text-black text-[9px] font-black px-1.5 py-0.2 rounded-full shadow">
-                    🪙 {Math.floor(Math.random() * 50)}
-                  </div>
-
-                  {/* Mic Mute Indicator */}
-                  {!participant.isMicrophoneEnabled && (
-                    <div className="absolute top-1 right-1 bg-black/60 p-1 rounded-full text-[9px]">
-                      🔇
-                    </div>
-                  )}
-
-                  {/* Bottom Label (Host / Name) */}
-                  <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[10px]">
-                    <span className="font-semibold truncate max-w-[60px]">
-                      {isHost ? 'Host' : `${index} ${participant.identity}`}
-                    </span>
-                    {isHost && <span className="text-cyan-400 font-bold text-[9px]">HOST</span>}
-                  </div>
-                </div>
+                <ParticipantContext.Provider value={participant}>
+                  <SeatTile participant={participant} index={index} isHost={isHost} />
+                </ParticipantContext.Provider>
               ) : (
                 /* EMPTY SEAT SLOT */
                 <div className="flex flex-col items-center justify-center text-slate-500 hover:text-white transition cursor-pointer w-full h-full">
@@ -102,6 +92,14 @@ export function MultiSeatStage() {
       {/* 3. FLOATING LIVE CHAT OVERLAY */}
       <div className="flex-1 p-4 flex flex-col justify-end overflow-hidden z-10 pointer-events-none">
         <div className="space-y-1.5 max-h-48 overflow-y-auto pointer-events-auto text-xs scrollbar-none">
+          {chatMessages.map((msg) => (
+            <div key={msg.timestamp} className="bg-black/40 backdrop-blur px-3 py-1.5 rounded-xl w-fit max-w-[85%] border border-white/5">
+              <span className="text-cyan-400 font-bold mr-1.5">
+                {msg.from?.identity || 'Anonymous'}:
+              </span>
+              <span>{msg.message}</span>
+            </div>
+          ))}
           <div className="bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full w-fit text-[11px] font-semibold border border-amber-500/30">
             👑 AMUN-RA joined the stage
           </div>
@@ -118,11 +116,15 @@ export function MultiSeatStage() {
 
       {/* 4. BOTTOM ACTION TOOLBAR */}
       <footer className="px-3 py-3 bg-slate-950/80 backdrop-blur-md flex items-center justify-between gap-2 z-10 border-t border-white/10">
-        <input
-          type="text"
-          placeholder="Say Hi..."
-          className="bg-slate-800/80 border border-slate-700/60 rounded-full px-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 flex-1"
-        />
+        <form onSubmit={handleSendMessage} className="flex-1">
+          <input
+            type="text"
+            value={messageText}
+            onChange={(e) => setMessageText(e.target.value)}
+            placeholder="Say Hi..."
+            className="w-full bg-slate-800/80 border border-slate-700/60 rounded-full px-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+          />
+        </form>
 
         <button className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full text-xs">
           ✋ Join
@@ -134,6 +136,52 @@ export function MultiSeatStage() {
           🎁 Gift
         </button>
       </footer>
+    </div>
+  );
+}
+
+// Sub-component to render video feed & track status for an active seat
+function SeatTile({ participant, index, isHost }: { participant: any; index: number; isHost: boolean }) {
+  // Fetch camera track specifically for this participant
+  const cameraTracks = useTracks([Track.Source.Camera], {
+    onlySubscribed: false,
+  }).filter((trackRef) => trackRef.participant.identity === participant.identity);
+
+  const cameraTrack = cameraTracks[0];
+  const isMuted = !participant.isMicrophoneEnabled;
+
+  return (
+    <div className="w-full h-full relative flex items-center justify-center bg-slate-950">
+      {cameraTrack ? (
+        <VideoTrack
+          trackRef={cameraTrack}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-sm text-slate-300">
+          {participant.identity?.charAt(0).toUpperCase() || 'U'}
+        </div>
+      )}
+
+      {/* Level / Beans Badge */}
+      <div className="absolute top-1 left-1 bg-yellow-500/90 text-black text-[9px] font-black px-1.5 py-0.2 rounded-full shadow">
+        🪙 42
+      </div>
+
+      {/* Mic Mute Indicator */}
+      {isMuted && (
+        <div className="absolute top-1 right-1 bg-black/60 p-1 rounded-full text-[9px]">
+          🔇
+        </div>
+      )}
+
+      {/* Bottom Name Tag */}
+      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[10px]">
+        <span className="font-semibold truncate max-w-[60px]">
+          {participant.identity || `Guest ${index}`}
+        </span>
+        {isHost && <span className="text-cyan-400 font-bold text-[9px]">HOST</span>}
+      </div>
     </div>
   );
 }
