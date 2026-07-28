@@ -94,7 +94,7 @@ export function MultiSeatStage() {
   const [messageText, setMessageText] = React.useState('');
   const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
 
-  // 👈 2. AUTO-ENABLE MICROPHONE IF LOCAL USER IS ON STAGE / HOST
+  // Auto-enable microphone when joining
   React.useEffect(() => {
     if (localParticipant) {
       localParticipant.setMicrophoneEnabled(true).catch((err) => {
@@ -103,7 +103,6 @@ export function MultiSeatStage() {
     }
   }, [localParticipant]);
 
-  // Send a gift over LiveKit data channel
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
     const giftPayload = JSON.stringify({
       isGift: true,
@@ -112,10 +111,8 @@ export function MultiSeatStage() {
       senderName: localParticipant.identity || 'Anonymous',
     });
 
-    // Send payload using LiveKit chat stream
     await send(giftPayload);
 
-    // Trigger locally for instant feedback
     triggerGiftAnimation(
       localParticipant.identity || 'You',
       gift.type,
@@ -144,7 +141,6 @@ export function MultiSeatStage() {
     setMessageText('');
   };
 
-  // Handle incoming data/chat messages for gift animations
   React.useEffect(() => {
     if (chatMessages.length === 0) return;
     const latestMsg = chatMessages[chatMessages.length - 1];
@@ -158,8 +154,8 @@ export function MultiSeatStage() {
           parsed.icon
         );
       }
-    } catch (e) {
-      // Regular text message, ignore JSON parse error
+    } catch {
+      // Normal chat message
     }
   }, [chatMessages]);
 
@@ -167,7 +163,6 @@ export function MultiSeatStage() {
     setActiveGifts((prev) => prev.filter((g) => g.id !== id));
   };
 
-  // Function to handle joining the stage
   const handleJoinStage = async (seatIndex: number) => {
     try {
       await localParticipant.setCameraEnabled(true);
@@ -178,17 +173,15 @@ export function MultiSeatStage() {
     }
   };
 
-  // 1. ANCHOR SEAT 0 (Host is identified by identity starting with 'host_')
+  // Host in Seat 0
   const hostParticipant =
     participants.find((p) => p.identity.toLowerCase().startsWith('host_')) ||
     participants.find((p) => p.identity.toLowerCase().includes('host'));
 
-  // 2. FILTER GUEST SEATS 1-8
+  // Guests in Seats 1-8
   const stageGuests = participants.filter((p) => {
-    // Host stays in Seat 0
     if (p === hostParticipant) return false;
 
-    // Check if participant is actively publishing media tracks
     let hasPublishedVideo = false;
     let hasPublishedAudio = false;
 
@@ -203,13 +196,11 @@ export function MultiSeatStage() {
     return hasPublishedVideo || hasPublishedAudio;
   });
 
-  // 2. Create fixed 9-seat array (Seat 0 = Host, Seats 1-8 = Guests)
   const seats = Array.from({ length: TOTAL_SEATS }, (_, index) => {
     if (index === 0) return hostParticipant;
     return stageGuests[index - 1] || null;
   });
 
-  // Filter out raw gift JSON payloads from the chat message display
   const textChatMessages = chatMessages.filter((msg) => {
     try {
       const parsed = JSON.parse(msg.message);
@@ -219,37 +210,21 @@ export function MultiSeatStage() {
     }
   });
 
-  // 1. Get room name and router
-  const roomName = "stream_stage";
   const room = useRoomContext();
   const router = useRouter();
 
-  // 2. Check if local user is the host
   const isHost = Boolean(
     localParticipant?.identity &&
     hostParticipant?.identity &&
     localParticipant.identity === hostParticipant.identity
   );
 
-  // 3. Kick viewers to home page when stream ends / room deletes
   React.useEffect(() => {
     if (!room) return;
     const handleDisconnected = () => {
       router.push('/');
     };
-    // Fail-safe: Listen for broadcast message sent right before room deletion
-    const handleDataReceived = (payload: Uint8Array) => {
-      try {
-        const decoder = new TextDecoder();
-        const str = decoder.decode(payload);
-        const data = JSON.parse(str);
-        if (data.type === 'STREAM_ENDED') {
-          router.push('/');
-        }
-      } catch {
-        // Ignore non-JSON or unrelated messages
-      }
-    };
+
     room.on(RoomEvent.Disconnected, handleDisconnected);
     return () => {
       room.off(RoomEvent.Disconnected, handleDisconnected);
@@ -258,16 +233,14 @@ export function MultiSeatStage() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden relative font-sans">
-      {/* 🔊 MANDATORY: Plays all incoming audio tracks from stage participants */}
       <RoomAudioRenderer />
 
-      {/* GIFT ANIMATION OVERLAY */}
       <GiftOverlay
         activeGifts={activeGifts}
         onAnimationEnd={handleRemoveGift}
       />
 
-      {/* 1. TOP HEADER BAR */}
+      {/* HEADER BAR */}
       <header className="px-4 py-3 bg-slate-950/40 backdrop-blur-md flex items-center justify-between z-10 border-b border-white/10">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-pink-500 flex items-center justify-center font-bold text-xs border border-white/20">
@@ -277,9 +250,6 @@ export function MultiSeatStage() {
             <h1 className="text-xs font-bold leading-none">Zodiac Room - Live</h1>
             <span className="text-[10px] text-slate-400 font-mono">ID: stream_stage</span>
           </div>
-          <button className="ml-1 bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs px-2 py-0.5 rounded-full">
-
-          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -290,13 +260,11 @@ export function MultiSeatStage() {
           <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
             👥 {participants.length}
           </span>
-          {/* 🔴 END STREAM BUTTON HERE */}
-          {/* 🔒 ONLY RENDER END STREAM BUTTON IF USER IS THE HOST */}
           {isHost && <EndStreamButton streamId="stream_stage" />}
         </div>
       </header>
 
-      {/* 2. 3x3 MULTI-GUEST SEAT GRID */}
+      {/* 3x3 GRID */}
       <div className="grid grid-cols-3 grid-rows-3 gap-1.5 p-2 bg-slate-950/80 aspect-square w-full max-w-md mx-auto z-10 rounded-xl my-auto">
         {seats.map((participant, index) => {
           if (participant) {
@@ -326,7 +294,7 @@ export function MultiSeatStage() {
         })}
       </div>
 
-      {/* QUICK GIFTING BAR */}
+      {/* GIFT BAR */}
       <div className="px-3 py-2 bg-slate-950/90 border-t border-white/10 flex items-center justify-around z-20">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
           Send Gift:
@@ -345,7 +313,7 @@ export function MultiSeatStage() {
         ))}
       </div>
 
-      {/* 3. CHAT OVERLAY & INPUT */}
+      {/* CHAT */}
       <div className="p-3 bg-slate-950/60 backdrop-blur-md border-t border-white/10 z-10 mt-auto">
         <div className="h-28 overflow-y-auto mb-2 flex flex-col gap-1 text-xs">
           {textChatMessages.map((msg, idx) => (
