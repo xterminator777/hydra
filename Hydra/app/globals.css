@@ -154,3 +154,13 @@
 .lk-prejoin button[type='submit']:active {
   transform: scale(0.98) !important;
 }
+
+/* Lock WebRTC video elements on their own GPU compositor layer */
+.lk-room-container video,
+video {
+  transform: translate3d(0, 0, 0) !important;
+  backface-visibility: hidden !important;
+  will-change: transform !important;
+  background-color: #020617 !important; /* Prevents frame gap flash */
+  isolation: isolate !important;
+}

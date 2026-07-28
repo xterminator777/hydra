@@ -250,6 +250,11 @@ function VideoConferenceComponent(props: {
       publishDefaults: publishDefaults,
       audioCaptureDefaults: {
         deviceId: props.userChoices.audioDeviceId ?? undefined,
+        autoGainControl: true,
+      echoCancellation: true,
+      noiseSuppression: true,
+      // Prevents browser WebRTC engine from pausing video frames on audio activity
+      channelCount: 1,
       },
       // Turned off dynamic layer switching to prevent microsecond black flashes when talking
       adaptiveStream: false,
