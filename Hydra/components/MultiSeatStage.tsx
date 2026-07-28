@@ -5,13 +5,14 @@ import {
   useParticipants,
   VideoTrack,
   ParticipantContext,
-  useTracks,
   useChat,
   useLocalParticipant,
   useRoomContext,
-  RoomAudioRenderer, // 👈 1. ADDED ROOM AUDIO RENDERER
+  RoomAudioRenderer,
+  useIsSpeaking,
+  useIsMuted,
 } from '@livekit/components-react';
-import { Track, RoomEvent } from 'livekit-client';
+import { Track, RoomEvent, Participant } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
 import { EndStreamButton } from './EndStreamButton';
 import { useRouter } from 'next/navigation';
@@ -24,6 +25,67 @@ const AVAILABLE_GIFTS = [
   { type: 'rocket', icon: '🚀', cost: 100 },
   { type: 'crown', icon: '👑', cost: 500 },
 ] as const;
+
+// 1. ISOLATED SEAT TILE COMPONENT (Declared outside to prevent unmounting)
+const SeatTile = React.memo(function SeatTile({
+  participant,
+  index,
+  isHost,
+}: {
+  participant: Participant;
+  index: number;
+  isHost?: boolean;
+}) {
+  const isSpeaking = useIsSpeaking(participant);
+  const isMuted = !participant.isMicrophoneEnabled;
+
+  // Derive stable camera track publication directly from participant object
+  const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
+  const cameraTrack = cameraPublication?.track;
+
+  return (
+    <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
+      {/* Active speaker border overlay (isolated from video DOM node) */}
+      {isSpeaking && (
+        <div className="absolute inset-0 border-2 border-cyan-400 z-10 pointer-events-none rounded-lg ring-2 ring-cyan-400/40" />
+      )}
+
+      {cameraTrack && cameraPublication ? (
+        <VideoTrack
+          trackRef={{
+            participant,
+            source: Track.Source.Camera,
+            publication: cameraPublication,
+          }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
+          {participant.identity?.charAt(0).toUpperCase() || 'U'}
+        </div>
+      )}
+
+      {/* Mic Status Indicator */}
+      {isMuted && (
+        <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
+          🔇
+        </div>
+      )}
+
+      {/* Bottom Label Tag */}
+      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
+        <span className="font-semibold truncate max-w-[50px] text-white">
+          {participant.identity || `Guest ${index}`}
+        </span>
+        {isHost && (
+          <div className="flex items-center gap-1">
+            <span className="text-cyan-400 font-bold text-[8px]">HOST</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export function MultiSeatStage() {
   const participants = useParticipants();
@@ -61,59 +123,6 @@ export function MultiSeatStage() {
     );
   };
 
-  {/* SUB-COMPONENT: INDIVIDUAL SEAT TILE */ }
-  function SeatTile({
-    participant,
-    index,
-    isHost,
-  }: {
-    participant: any;
-    index: number;
-    isHost?: boolean;
-  }) {
-    const cameraTracks = useTracks([Track.Source.Camera], {
-      onlySubscribed: false,
-    }).filter((trackRef) => trackRef.participant.identity === participant.identity);
-
-    const cameraTrack = cameraTracks[0];
-    const isMuted = !participant.isMicrophoneEnabled;
-
-    return (
-      <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
-        {cameraTrack ? (
-          <VideoTrack
-            trackRef={cameraTrack}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : (
-          <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
-            {participant.identity?.charAt(0).toUpperCase() || 'U'}
-          </div>
-        )}
-
-        {/* Mic Status */}
-        {isMuted && (
-          <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
-            🔇
-          </div>
-        )}
-
-        {/* Bottom Label Tag */}
-        <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
-          <span className="font-semibold truncate max-w-[50px] text-white">
-            {participant.identity || `Guest ${index}`}
-          </span>
-          {isHost && (
-            <div className="flex items-center gap-1">
-              <span className="text-cyan-400 font-bold text-[8px]">HOST</span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Helper to append a new floating gift to state
   const triggerGiftAnimation = (
     senderName: string,
     giftType: 'rose' | 'diamond' | 'rocket' | 'crown',
