@@ -7,8 +7,11 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Hydra - Live Stream Studio',
-  description: 'Interactive real-time 3x3 multi-guest streaming',
+  title: 'OsirisCore Tech',
+  description: 'Multi-seat live streaming and interactive video broadcasts.',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
