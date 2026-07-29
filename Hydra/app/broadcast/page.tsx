@@ -35,6 +35,59 @@ import { MultiSeatStage } from '../../components/MultiSeatStage';
 
 const SHOW_SETTINGS_MENU = process.env.NEXT_PUBLIC_SHOW_SETTINGS_MENU === 'true';
 
+
+const captureAndSaveThumbnail = async (videoElement: HTMLVideoElement, roomName: string) => {
+  if (!videoElement || videoElement.readyState < 2) return;
+
+  // 1. Scale down to 640x360 for minimal file size (~30-50 KB)
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 360;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+  // 2. Compress frame to JPEG
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+
+    const filePath = `thumbnails/${roomName}.jpg`;
+
+    // 3. Upload ONCE to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('stream-thumbnails')
+      .upload(filePath, blob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('Thumbnail upload failed:', uploadError.message);
+      return;
+    }
+
+    // 4. Get public image URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('stream-thumbnails')
+      .getPublicUrl(filePath);
+
+    // 5. Update database row ONCE
+    const { error: dbError } = await supabase
+      .from('streams')
+      .update({ thumbnail_url: publicUrl })
+      .eq('room_name', roomName);
+
+    if (dbError) {
+      console.error('Failed to update stream thumbnail URL:', dbError.message);
+    } else {
+      console.log('Stream thumbnail successfully captured and saved!');
+    }
+  }, 'image/jpeg', 0.7);
+};
+
+
+
 export function StreamStudioPage(props: {
   roomName: string;
   region?: string;
@@ -349,6 +402,29 @@ function VideoConferenceComponent(props: {
     }
   }, [lowPowerMode]);
 
+  // ---------------------------------------------------------------------------
+  // 📸 ONE-TIME THUMBNAIL CAPTURE (15s after connection)
+  // ---------------------------------------------------------------------------
+  const hasCapturedThumbnail = React.useRef(false);
+
+  React.useEffect(() => {
+    const roomName = props.connectionDetails?.roomName;
+    if (!roomName || hasCapturedThumbnail.current) return;
+
+    // Wait 15 seconds into the stream before capturing a single frame
+    const timer = setTimeout(() => {
+      const videoElement = document.querySelector('.lk-room-container video, video') as HTMLVideoElement;
+
+      if (videoElement && !hasCapturedThumbnail.current) {
+        captureAndSaveThumbnail(videoElement, roomName);
+        hasCapturedThumbnail.current = true; // Prevents any re-captures / extra DB requests
+      }
+    }, 15000);
+
+    return () => clearTimeout(timer);
+  }, [props.connectionDetails?.roomName]);
+  // ---------------------------------------------------------------------------
+
   return (
     <div className="lk-room-container">
       <RoomContext.Provider value={room}>
@@ -360,6 +436,8 @@ function VideoConferenceComponent(props: {
       </RoomContext.Provider>
     </div>
   );
+
+
 }
 
 // Default export required by Next.js App Router
