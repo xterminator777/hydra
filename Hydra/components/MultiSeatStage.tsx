@@ -277,10 +277,7 @@ export function MultiSeatStage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex -space-x-1 overflow-hidden">
-            <div className="inline-block h-5 w-5 rounded-full ring-1 ring-white/20 bg-slate-700" />
-            <div className="inline-block h-5 w-5 rounded-full ring-1 ring-white/20 bg-slate-600" />
-          </div>
+         
           <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
             👥 {participants.length}
           </span>
