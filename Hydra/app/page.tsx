@@ -328,9 +328,6 @@ export default function DirectoryPage() {
                     <h2 className="font-bold text-sm text-white line-clamp-1 group-hover:text-red-400 transition">
                       {stream.title}
                     </h2>
-                    <p className="text-xs font-mono text-gray-500 mt-1 line-clamp-1">
-                      Room: {stream.livekit_room_name}
-                    </p>
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-gray-800/60 flex items-center justify-between text-[11px] text-gray-400">
