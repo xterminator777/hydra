@@ -213,6 +213,36 @@ export function MultiSeatStage() {
     localParticipant.identity === hostParticipant.identity
   );
 
+  // Check if local participant is currently on stage as a guest (publishing media and not the host)
+  const isLocalUserOnStage = Boolean(
+    !isHost &&
+    localParticipant &&
+    (localParticipant.isCameraEnabled || localParticipant.isMicrophoneEnabled)
+  );
+
+  // 1. Leave Stage (revert to passive viewer)
+  const handleLeaveStage = async () => {
+    try {
+      await localParticipant.setCameraEnabled(false);
+      await localParticipant.setMicrophoneEnabled(false);
+    } catch (error) {
+      console.error('Failed to leave stage:', error);
+    }
+  };
+
+  // 2. Leave Room (exit live room completely)
+  const handleLeaveRoom = async () => {
+    try {
+      if (room) {
+        await room.disconnect();
+      }
+    } catch (error) {
+      console.error('Error disconnecting from room:', error);
+    } finally {
+      router.push('/');
+    }
+  };
+
   React.useEffect(() => {
     if (!room) return;
     const handleDisconnected = () => {
@@ -254,7 +284,28 @@ export function MultiSeatStage() {
           <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
             👥 {participants.length}
           </span>
-          {isHost && <EndStreamButton streamId="stream_stage" />}
+
+          {/* 🟢 GUEST ON STAGE: Leave Stage Button */}
+          {isLocalUserOnStage && (
+            <button
+              onClick={handleLeaveStage}
+              className="bg-amber-600/80 hover:bg-amber-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-amber-500/30 transition cursor-pointer"
+              title="Stop sharing video/audio and return to audience"
+            >
+              Leave Stage
+            </button>
+          )}
+
+          {isHost ? (<EndStreamButton streamId="stream_stage" />) : (
+            /* 🚪 VIEWER / GUEST: Leave Room Button */
+            <button
+              onClick={handleLeaveRoom}
+              className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
+              title="Leave room"
+            >
+              Leave Room
+            </button>
+          )}
         </div>
       </header>
 
