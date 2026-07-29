@@ -95,13 +95,7 @@ export function MultiSeatStage() {
   const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
 
   // Auto-enable microphone when joining
-  React.useEffect(() => {
-    if (localParticipant) {
-      localParticipant.setMicrophoneEnabled(true).catch((err) => {
-        console.warn("Failed to auto-enable microphone on join:", err);
-      });
-    }
-  }, [localParticipant]);
+
 
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
     const giftPayload = JSON.stringify({
