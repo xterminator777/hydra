@@ -241,7 +241,8 @@ function VideoConferenceComponent(props: {
     };
     const publishDefaults: TrackPublishDefaults = {
       dtx: true,
-      videoSimulcastLayers: [VideoPresets.h720],
+      // Enable simulcast layers so LiveKit can scale down quality when seats are small
+      videoSimulcastLayers: [VideoPresets.h720, VideoPresets.h360, VideoPresets.h180],
       red: !e2eeEnabled,
       videoCodec,
     };
@@ -251,14 +252,14 @@ function VideoConferenceComponent(props: {
       audioCaptureDefaults: {
         deviceId: props.userChoices.audioDeviceId ?? undefined,
         autoGainControl: true,
-      echoCancellation: true,
-      noiseSuppression: true,
-      // Prevents browser WebRTC engine from pausing video frames on audio activity
-      channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        // Prevents browser WebRTC engine from pausing video frames on audio activity
+        channelCount: 1,
       },
-      // Turned off dynamic layer switching to prevent microsecond black flashes when talking
-      adaptiveStream: false,
-      dynacast: false,
+      // 🟢 RE-ENABLED: Dynamic quality & bandwidth optimization      
+      adaptiveStream: true,
+      dynacast: true,
       e2ee: keyProvider && worker && e2eeEnabled ? { keyProvider, worker } : undefined,
       singlePeerConnection: props.options.singlePeerConnection,
     };
