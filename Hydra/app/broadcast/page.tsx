@@ -76,7 +76,7 @@ const captureAndSaveThumbnail = async (videoElement: HTMLVideoElement, roomName:
     const { error: dbError } = await supabase
       .from('streams')
       .update({ thumbnail_url: publicUrl })
-      .eq('room_name', roomName);
+      .eq('livekit_room_name', roomName);
 
     if (dbError) {
       console.error('Failed to update stream thumbnail URL:', dbError.message);

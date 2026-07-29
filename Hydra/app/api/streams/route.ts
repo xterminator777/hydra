@@ -33,6 +33,7 @@ export async function GET(request: Request) {
       title,
       livekit_room_name,
       created_at,
+      thumbnail_url,
       categories!inner(name, slug)
     `)
     .eq('is_live', true)
