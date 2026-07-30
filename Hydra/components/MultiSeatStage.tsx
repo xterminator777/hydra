@@ -298,8 +298,8 @@ export function MultiSeatStage() {
 
   const displayHostHandle = hostUsername
     ? `@${hostUsername}`
-    : localParticipant?.identity
-    ? `@${localParticipant.identity.replace(/^host_/, '')}`
+    : hostParticipant?.identity
+    ? `@${hostParticipant.identity.replace(/^host_/, '')}`
     : '@host';
 
   const displayTitle = streamTitle || 'Live Broadcast';
