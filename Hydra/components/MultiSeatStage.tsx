@@ -1,4 +1,5 @@
 'use client';
+// Have NOT fixed room titles for viewers. Ignore last commit for that part. 
 
 import React, { useState, useEffect } from 'react';
 import {
