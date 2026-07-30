@@ -101,37 +101,43 @@ export function MultiSeatStage() {
   const room = useRoomContext();
   const router = useRouter();
 
-  // 🟢 Query Supabase for Stream Title & Host Username using Room Name OR User ID
   useEffect(() => {
-    async function fetchStreamDetails() {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // 1. Fetch current live stream record from 'streams' table
-      let query = supabase.from('streams').select('title, host_id').eq('is_live', true);
+    let isMounted = true;
 
-      if (room?.name) {
-        query = query.eq('livekit_room_name', room.name);
-      } else if (user?.id) {
-        query = query.eq('host_id', user.id);
+    async function fetchStreamDetails() {
+      // 1. Fallback to URL path if room?.name hasn't hydrated yet
+      const urlRoomName = window.location.pathname.split('/').pop();
+      const targetRoomName = room?.name || (urlRoomName !== 'watch' ? urlRoomName : null);
+
+      if (!targetRoomName) return;
+
+      // 2. Query 'streams' strictly by room name (case-insensitive)
+      const { data: streamData, error: streamError } = await supabase
+        .from('streams')
+        .select('title, host_id')
+        .ilike('livekit_room_name', targetRoomName)
+        .maybeSingle();
+
+      if (streamError) {
+        console.error('Error fetching stream details:', streamError.message);
+        return;
       }
 
-      const { data: streamData, error: streamError } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
-
-      if (!streamError && streamData) {
+      if (streamData && isMounted) {
+        // Set real stream title from DB
         if (streamData.title) {
           setStreamTitle(streamData.title);
         }
 
-        // 2. Fetch host's profile username
-        const targetHostId = streamData.host_id || user?.id;
-        if (targetHostId) {
+        // 3. Query 'profiles' strictly using the stream's host_id
+        if (streamData.host_id) {
           const { data: profileData } = await supabase
             .from('profiles')
             .select('username')
-            .eq('id', targetHostId)
+            .eq('id', streamData.host_id)
             .maybeSingle();
 
-          if (profileData?.username) {
+          if (profileData?.username && isMounted) {
             setHostUsername(profileData.username);
           }
         }
@@ -139,7 +145,19 @@ export function MultiSeatStage() {
     }
 
     fetchStreamDetails();
-  }, [room?.name]);
+
+    // 4. Retry after 1.5s if the WebRTC room state was still connecting during mount
+    const retryTimer = setTimeout(() => {
+      if (isMounted) {
+        fetchStreamDetails();
+      }
+    }, 1500);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(retryTimer);
+    };
+  }, [room?.name, room?.state]);
 
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
     const giftPayload = JSON.stringify({
