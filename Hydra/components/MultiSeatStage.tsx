@@ -39,18 +39,15 @@ const SeatTile = React.memo(function SeatTile({
   const isSpeaking = useIsSpeaking(participant);
   const isMuted = !participant.isMicrophoneEnabled;
 
-  // Derive stable camera track publication directly from participant object
   const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
   const cameraTrack = cameraPublication?.track;
 
-  // 🟢 Clean identity (strips 'host_' prefix if present)
   const displayIdentity = participant.identity
     ? participant.identity.replace(/^host_/, '')
     : `Guest ${index}`;
 
   return (
     <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
-      {/* Active speaker border overlay */}
       {isSpeaking && (
         <div className="absolute inset-0 border-2 border-cyan-400 z-10 pointer-events-none rounded-lg ring-2 ring-cyan-400/40" />
       )}
@@ -70,14 +67,12 @@ const SeatTile = React.memo(function SeatTile({
         </div>
       )}
 
-      {/* Mic Status Indicator */}
       {isMuted && (
         <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
           🔇
         </div>
       )}
 
-      {/* Bottom Label Tag */}
       <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
         <span className="font-semibold truncate max-w-[65px] text-white">
           {displayIdentity}
@@ -99,44 +94,43 @@ export function MultiSeatStage() {
   const [messageText, setMessageText] = React.useState('');
   const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
 
-  // 🟢 DB-Driven Header State
   const [streamTitle, setStreamTitle] = useState<string>('');
   const [hostUsername, setHostUsername] = useState<string>('');
 
   const room = useRoomContext();
   const router = useRouter();
 
-  // 🟢 Fetch Stream Title & Host Username from Supabase
+  // 🟢 Query Supabase for Stream Title & Host Username using Room Name OR User ID
   useEffect(() => {
     async function fetchStreamDetails() {
-      if (!room?.name) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // 1. Fetch current live stream record from 'streams' table
+      let query = supabase.from('streams').select('title, host_id').eq('is_live', true);
 
-      // 1. Select title and host_id from 'streams' using 'livekit_room_name'
-      const { data: streamData, error: streamError } = await supabase
-        .from('streams')
-        .select('title, host_id')
-        .eq('livekit_room_name', room.name)
-        .maybeSingle();
-
-      if (streamError) {
-        console.error('Error fetching stream details:', streamError.message);
-        return;
+      if (room?.name) {
+        query = query.eq('livekit_room_name', room.name);
+      } else if (user?.id) {
+        query = query.eq('host_id', user.id);
       }
 
-      if (streamData) {
+      const { data: streamData, error: streamError } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      if (!streamError && streamData) {
         if (streamData.title) {
           setStreamTitle(streamData.title);
         }
 
-        // 2. Query 'profiles' table using 'host_id' to get username
-        if (streamData.host_id) {
-          const { data: profileData, error: profileError } = await supabase
+        // 2. Fetch host's profile username
+        const targetHostId = streamData.host_id || user?.id;
+        if (targetHostId) {
+          const { data: profileData } = await supabase
             .from('profiles')
             .select('username')
-            .eq('id', streamData.host_id)
+            .eq('id', targetHostId)
             .maybeSingle();
 
-          if (!profileError && profileData?.username) {
+          if (profileData?.username) {
             setHostUsername(profileData.username);
           }
         }
@@ -222,12 +216,10 @@ export function MultiSeatStage() {
     }
   };
 
-  // Host in Seat 0
   const hostParticipant =
     participants.find((p) => p.identity.toLowerCase().startsWith('host_')) ||
     participants.find((p) => p.identity.toLowerCase().includes('host'));
 
-  // Guests in Seats 1-8
   const stageGuests = participants.filter((p) => {
     if (p === hostParticipant) return false;
 
@@ -271,7 +263,6 @@ export function MultiSeatStage() {
     (localParticipant.isCameraEnabled || localParticipant.isMicrophoneEnabled)
   );
 
-  // 1. Leave Stage
   const handleLeaveStage = async () => {
     try {
       await localParticipant.setCameraEnabled(false);
@@ -281,7 +272,6 @@ export function MultiSeatStage() {
     }
   };
 
-  // 2. Leave Room
   const handleLeaveRoom = async () => {
     try {
       if (room) {
@@ -306,7 +296,6 @@ export function MultiSeatStage() {
     };
   }, [room, router]);
 
-  // 🟢 Formatted Handle & Title Display
   const displayHostHandle = hostUsername
     ? `@${hostUsername}`
     : localParticipant?.identity
@@ -328,16 +317,15 @@ export function MultiSeatStage() {
       {/* HEADER BAR */}
       <header className="px-4 py-3 bg-slate-950/40 backdrop-blur-md flex items-center justify-between z-10 border-b border-white/10">
         <div className="flex items-center gap-2.5">
-          {/* Host Avatar Circle */}
           <div className="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center font-bold text-xs border border-white/20">
             {hostInitial}
           </div>
           <div>
-            {/* 🟢 Stream Title from Supabase DB ('title' column) */}
-            <h1 className="text-xs font-bold leading-none text-white">
+            {/* 🟢 Stream Title */}
+            <h1 className="text-xs font-bold leading-none text-white capitalize">
               {displayTitle}
             </h1>
-            {/* 🟢 Host Username from Supabase 'profiles' table ('username' column) */}
+            {/* 🟢 Host Username */}
             <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
               Host: {displayHostHandle}
             </span>
@@ -349,7 +337,6 @@ export function MultiSeatStage() {
             👥 {participants.length}
           </span>
 
-          {/* GUEST ON STAGE: Leave Stage Button */}
           {isLocalUserOnStage && (
             <button
               onClick={handleLeaveStage}
@@ -363,7 +350,6 @@ export function MultiSeatStage() {
           {isHost ? (
             <EndStreamButton streamId={room?.name || 'stream_stage'} />
           ) : (
-            /* VIEWER / GUEST: Leave Room Button */
             <button
               onClick={handleLeaveRoom}
               className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
