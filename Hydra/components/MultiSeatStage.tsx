@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   useParticipants,
   VideoTrack,
@@ -10,12 +10,12 @@ import {
   useRoomContext,
   RoomAudioRenderer,
   useIsSpeaking,
-  useIsMuted,
 } from '@livekit/components-react';
 import { Track, RoomEvent, Participant } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
 import { EndStreamButton } from './EndStreamButton';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 const TOTAL_SEATS = 9;
 
@@ -26,7 +26,7 @@ const AVAILABLE_GIFTS = [
   { type: 'crown', icon: '👑', cost: 500 },
 ] as const;
 
-// 1. ISOLATED SEAT TILE COMPONENT (Declared outside to prevent unmounting)
+// 1. ISOLATED SEAT TILE COMPONENT
 const SeatTile = React.memo(function SeatTile({
   participant,
   index,
@@ -43,9 +43,14 @@ const SeatTile = React.memo(function SeatTile({
   const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
   const cameraTrack = cameraPublication?.track;
 
+  // 🟢 Clean identity (strips 'host_' prefix if present)
+  const displayIdentity = participant.identity
+    ? participant.identity.replace(/^host_/, '')
+    : `Guest ${index}`;
+
   return (
     <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
-      {/* Active speaker border overlay (isolated from video DOM node) */}
+      {/* Active speaker border overlay */}
       {isSpeaking && (
         <div className="absolute inset-0 border-2 border-cyan-400 z-10 pointer-events-none rounded-lg ring-2 ring-cyan-400/40" />
       )}
@@ -61,7 +66,7 @@ const SeatTile = React.memo(function SeatTile({
         />
       ) : (
         <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
-          {participant.identity?.charAt(0).toUpperCase() || 'U'}
+          {displayIdentity.charAt(0).toUpperCase() || 'U'}
         </div>
       )}
 
@@ -73,9 +78,9 @@ const SeatTile = React.memo(function SeatTile({
       )}
 
       {/* Bottom Label Tag */}
-      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
-        <span className="font-semibold truncate max-w-[50px] text-white">
-          {participant.identity || `Guest ${index}`}
+      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
+        <span className="font-semibold truncate max-w-[65px] text-white">
+          {displayIdentity}
         </span>
         {isHost && (
           <div className="flex items-center gap-1">
@@ -94,21 +99,69 @@ export function MultiSeatStage() {
   const [messageText, setMessageText] = React.useState('');
   const [activeGifts, setActiveGifts] = useState<GiftEvent[]>([]);
 
-  // Auto-enable microphone when joining
+  // 🟢 DB-Driven Header State
+  const [streamTitle, setStreamTitle] = useState<string>('');
+  const [hostUsername, setHostUsername] = useState<string>('');
 
+  const room = useRoomContext();
+  const router = useRouter();
+
+  // 🟢 Fetch Stream Title & Host Username from Supabase
+  useEffect(() => {
+    async function fetchStreamDetails() {
+      if (!room?.name) return;
+
+      // 1. Select title and host_id from 'streams' using 'livekit_room_name'
+      const { data: streamData, error: streamError } = await supabase
+        .from('streams')
+        .select('title, host_id')
+        .eq('livekit_room_name', room.name)
+        .maybeSingle();
+
+      if (streamError) {
+        console.error('Error fetching stream details:', streamError.message);
+        return;
+      }
+
+      if (streamData) {
+        if (streamData.title) {
+          setStreamTitle(streamData.title);
+        }
+
+        // 2. Query 'profiles' table using 'host_id' to get username
+        if (streamData.host_id) {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', streamData.host_id)
+            .maybeSingle();
+
+          if (!profileError && profileData?.username) {
+            setHostUsername(profileData.username);
+          }
+        }
+      }
+    }
+
+    fetchStreamDetails();
+  }, [room?.name]);
 
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
     const giftPayload = JSON.stringify({
       isGift: true,
       giftType: gift.type,
       icon: gift.icon,
-      senderName: localParticipant.identity || 'Anonymous',
+      senderName: localParticipant.identity
+        ? localParticipant.identity.replace(/^host_/, '')
+        : 'Anonymous',
     });
 
     await send(giftPayload);
 
     triggerGiftAnimation(
-      localParticipant.identity || 'You',
+      localParticipant.identity
+        ? localParticipant.identity.replace(/^host_/, '')
+        : 'You',
       gift.type,
       gift.icon
     );
@@ -143,7 +196,9 @@ export function MultiSeatStage() {
       const parsed = JSON.parse(latestMsg.message);
       if (parsed.isGift) {
         triggerGiftAnimation(
-          latestMsg.from?.identity || 'Viewer',
+          latestMsg.from?.identity
+            ? latestMsg.from.identity.replace(/^host_/, '')
+            : 'Viewer',
           parsed.giftType,
           parsed.icon
         );
@@ -204,23 +259,19 @@ export function MultiSeatStage() {
     }
   });
 
-  const room = useRoomContext();
-  const router = useRouter();
-
   const isHost = Boolean(
     localParticipant?.identity &&
     hostParticipant?.identity &&
     localParticipant.identity === hostParticipant.identity
   );
 
-  // Check if local participant is currently on stage as a guest (publishing media and not the host)
   const isLocalUserOnStage = Boolean(
     !isHost &&
     localParticipant &&
     (localParticipant.isCameraEnabled || localParticipant.isMicrophoneEnabled)
   );
 
-  // 1. Leave Stage (revert to passive viewer)
+  // 1. Leave Stage
   const handleLeaveStage = async () => {
     try {
       await localParticipant.setCameraEnabled(false);
@@ -230,7 +281,7 @@ export function MultiSeatStage() {
     }
   };
 
-  // 2. Leave Room (exit live room completely)
+  // 2. Leave Room
   const handleLeaveRoom = async () => {
     try {
       if (room) {
@@ -255,6 +306,16 @@ export function MultiSeatStage() {
     };
   }, [room, router]);
 
+  // 🟢 Formatted Handle & Title Display
+  const displayHostHandle = hostUsername
+    ? `@${hostUsername}`
+    : localParticipant?.identity
+    ? `@${localParticipant.identity.replace(/^host_/, '')}`
+    : '@host';
+
+  const displayTitle = streamTitle || 'Live Broadcast';
+  const hostInitial = displayHostHandle.replace('@', '').charAt(0).toUpperCase() || 'H';
+
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden relative font-sans">
       <RoomAudioRenderer />
@@ -266,23 +327,29 @@ export function MultiSeatStage() {
 
       {/* HEADER BAR */}
       <header className="px-4 py-3 bg-slate-950/40 backdrop-blur-md flex items-center justify-between z-10 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-pink-500 flex items-center justify-center font-bold text-xs border border-white/20">
-            H
+        <div className="flex items-center gap-2.5">
+          {/* Host Avatar Circle */}
+          <div className="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center font-bold text-xs border border-white/20">
+            {hostInitial}
           </div>
           <div>
-            <h1 className="text-xs font-bold leading-none">Zodiac Room - Live</h1>
-            <span className="text-[10px] text-slate-400 font-mono">ID: stream_stage</span>
+            {/* 🟢 Stream Title from Supabase DB ('title' column) */}
+            <h1 className="text-xs font-bold leading-none text-white">
+              {displayTitle}
+            </h1>
+            {/* 🟢 Host Username from Supabase 'profiles' table ('username' column) */}
+            <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
+              Host: {displayHostHandle}
+            </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-         
           <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
             👥 {participants.length}
           </span>
 
-          {/* 🟢 GUEST ON STAGE: Leave Stage Button */}
+          {/* GUEST ON STAGE: Leave Stage Button */}
           {isLocalUserOnStage && (
             <button
               onClick={handleLeaveStage}
@@ -293,8 +360,10 @@ export function MultiSeatStage() {
             </button>
           )}
 
-          {isHost ? (<EndStreamButton streamId="stream_stage" />) : (
-            /* 🚪 VIEWER / GUEST: Leave Room Button */
+          {isHost ? (
+            <EndStreamButton streamId={room?.name || 'stream_stage'} />
+          ) : (
+            /* VIEWER / GUEST: Leave Room Button */
             <button
               onClick={handleLeaveRoom}
               className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
@@ -360,7 +429,9 @@ export function MultiSeatStage() {
         <div className="h-28 overflow-y-auto mb-2 flex flex-col gap-1 text-xs">
           {textChatMessages.map((msg, idx) => (
             <div key={idx} className="bg-slate-800/50 px-2 py-1 rounded">
-              <span className="font-bold text-cyan-400">{msg.from?.identity}: </span>
+              <span className="font-bold text-cyan-400">
+                {msg.from?.identity ? msg.from.identity.replace(/^host_/, '') : 'User'}:{' '}
+              </span>
               <span>{msg.message}</span>
             </div>
           ))}

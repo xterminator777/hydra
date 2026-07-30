@@ -5,16 +5,14 @@ import { decodePassphrase } from '@/lib/client-utils';
 import { DebugMode } from '@/lib/Debug';
 import { KeyboardShortcuts } from '@/lib/KeyboardShortcuts';
 import { RecordingIndicator } from '@/lib/RecordingIndicator';
-import { SettingsMenu } from '@/lib/SettingsMenu';
 import { ConnectionDetails } from '@/lib/types';
 import { supabase } from '@/lib/supabaseClient';
 import { EntranceBanner } from '@/components/EntranceBanner';
+
 import {
-  formatChatMessageLinks,
   LocalUserChoices,
   PreJoin,
   RoomContext,
-  VideoConference,
 } from '@livekit/components-react';
 import {
   ExternalE2EEKeyProvider,
@@ -32,9 +30,6 @@ import { useRouter } from 'next/navigation';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import { useLowCPUOptimizer } from '@/lib/usePerfomanceOptimiser';
 import { MultiSeatStage } from '../../components/MultiSeatStage';
-
-const SHOW_SETTINGS_MENU = process.env.NEXT_PUBLIC_SHOW_SETTINGS_MENU === 'true';
-
 
 const captureAndSaveThumbnail = async (videoElement: HTMLVideoElement, roomName: string) => {
   if (!videoElement || videoElement.readyState < 2) return;
@@ -86,8 +81,6 @@ const captureAndSaveThumbnail = async (videoElement: HTMLVideoElement, roomName:
   }, 'image/jpeg', 0.7);
 };
 
-
-
 export function StreamStudioPage(props: {
   roomName: string;
   region?: string;
@@ -107,10 +100,10 @@ export function StreamStudioPage(props: {
   const [apiError, setApiError] = React.useState<string | null>(null);
 
   // User & Profile State
-  const [hostUsername, setHostUsername] = React.useState<string>('Host');
+  const [hostUsername, setHostUsername] = React.useState<string>('');
   const [userId, setUserId] = React.useState<string | null>(null);
 
-  // Fetch authenticated host details on mount
+  // 🟢 Fetch authenticated host details & database username on mount
   React.useEffect(() => {
     async function loadHostDetails() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -134,25 +127,32 @@ export function StreamStudioPage(props: {
 
   const preJoinDefaults = React.useMemo(() => {
     return {
-      username: hostUsername,
+      username: hostUsername || 'Host',
       videoEnabled: true,
       audioEnabled: true,
     };
   }, [hostUsername]);
 
   const handlePreJoinSubmit = React.useCallback(async (values: LocalUserChoices) => {
-    setPreJoinChoices(values);
+    // 🟢 Override username with the database hostUsername if available
+    const activeUsername = hostUsername || values.username || 'Host';
+
+    const updatedChoices: LocalUserChoices = {
+      ...values,
+      username: activeUsername,
+    };
+
+    setPreJoinChoices(updatedChoices);
     setIsSubmitting(true);
     setApiError(null);
 
     if (!userId) {
       setApiError('You must be logged in with a valid account to host a live stream.');
+      setIsSubmitting(false);
       return;
     }
 
     try {
-      const activeName = values.username || hostUsername || 'Host';
-
       const response = await fetch('/api/streams/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -160,7 +160,7 @@ export function StreamStudioPage(props: {
           categorySlug,
           title: streamTitle,
           userId: userId || undefined,
-          participantName: activeName,
+          participantName: activeUsername,
           isHost: true,
         }),
       });
@@ -181,7 +181,7 @@ export function StreamStudioPage(props: {
         serverUrl: livekitUrl,
         roomName: data.roomName,
         participantToken: data.token,
-        participantName: activeName,
+        participantName: activeUsername,
       });
     } catch (err: any) {
       console.error('Error creating stream:', err);
@@ -237,6 +237,19 @@ export function StreamStudioPage(props: {
                   <option value="general">General</option>
                 </select>
               </div>
+
+              {/* 🔒 Locked Host Username Indicator */}
+              {hostUsername && (
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-slate-300 mb-1.5">
+                    Broadcasting As
+                  </label>
+                  <div className="w-full bg-slate-950/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm font-mono text-cyan-400 flex items-center justify-between">
+                    <span>@{hostUsername}</span>
+                    <span className="text-[10px] text-slate-500 uppercase font-sans">Verified Account</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="lk-prejoin-wrapper mt-4">
@@ -294,7 +307,6 @@ function VideoConferenceComponent(props: {
     };
     const publishDefaults: TrackPublishDefaults = {
       dtx: true,
-      // Enable simulcast layers so LiveKit can scale down quality when seats are small
       videoSimulcastLayers: [VideoPresets.h720, VideoPresets.h360, VideoPresets.h180],
       red: !e2eeEnabled,
       videoCodec,
@@ -307,10 +319,8 @@ function VideoConferenceComponent(props: {
         autoGainControl: true,
         echoCancellation: true,
         noiseSuppression: true,
-        // Prevents browser WebRTC engine from pausing video frames on audio activity
         channelCount: 1,
       },
-      // 🟢 RE-ENABLED: Dynamic quality & bandwidth optimization      
       adaptiveStream: true,
       dynacast: true,
       e2ee: keyProvider && worker && e2eeEnabled ? { keyProvider, worker } : undefined,
@@ -402,28 +412,24 @@ function VideoConferenceComponent(props: {
     }
   }, [lowPowerMode]);
 
-  // ---------------------------------------------------------------------------
   // 📸 ONE-TIME THUMBNAIL CAPTURE (15s after connection)
-  // ---------------------------------------------------------------------------
   const hasCapturedThumbnail = React.useRef(false);
 
   React.useEffect(() => {
     const roomName = props.connectionDetails?.roomName;
     if (!roomName || hasCapturedThumbnail.current) return;
 
-    // Wait 15 seconds into the stream before capturing a single frame
     const timer = setTimeout(() => {
       const videoElement = document.querySelector('.lk-room-container video, video') as HTMLVideoElement;
 
       if (videoElement && !hasCapturedThumbnail.current) {
         captureAndSaveThumbnail(videoElement, roomName);
-        hasCapturedThumbnail.current = true; // Prevents any re-captures / extra DB requests
+        hasCapturedThumbnail.current = true;
       }
     }, 15000);
 
     return () => clearTimeout(timer);
   }, [props.connectionDetails?.roomName]);
-  // ---------------------------------------------------------------------------
 
   return (
     <div className="lk-room-container">
@@ -436,8 +442,6 @@ function VideoConferenceComponent(props: {
       </RoomContext.Provider>
     </div>
   );
-
-
 }
 
 // Default export required by Next.js App Router
