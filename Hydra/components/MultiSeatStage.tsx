@@ -101,6 +101,21 @@ export function MultiSeatStage() {
   const room = useRoomContext();
   const router = useRouter();
 
+  const [copied, setCopied] = useState(false);
+
+  // Function to copy the shareable watch link to clipboard
+  const handleCopyShareLink = () => {
+    if (!room?.name) return;
+
+    // Constructs https://osiriscore.tech/watch/room_tech_12345
+    const shareUrl = `${window.location.origin}/watch/${room.name}`;
+
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000); // Reset button label after 2s
+    });
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -318,8 +333,8 @@ export function MultiSeatStage() {
   const displayHostHandle = hostUsername
     ? `@${hostUsername}`
     : hostParticipant?.identity
-    ? `@${hostParticipant.identity.replace(/^host_/, '')}`
-    : '@host';
+      ? `@${hostParticipant.identity.replace(/^host_/, '')}`
+      : '@host';
 
   const displayTitle = streamTitle || 'Live Broadcast';
   const hostInitial = displayHostHandle.replace('@', '').charAt(0).toUpperCase() || 'H';
@@ -350,34 +365,42 @@ export function MultiSeatStage() {
             </span>
           </div>
         </div>
+          {/* 🔗 Share Stream Link Button */}
+          <button
+            onClick={handleCopyShareLink}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1 rounded-lg border border-white/10 transition cursor-pointer flex items-center gap-1.5"
+            title="Copy watch link to share"
+          >
+            <span>{copied ? '✅ Copied!' : '🔗 Share Link'}</span>
+          </button>
 
-        <div className="flex items-center gap-2">
-          <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
-            👥 {participants.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
+              👥 {participants.length}
+            </span>
 
-          {isLocalUserOnStage && (
-            <button
-              onClick={handleLeaveStage}
-              className="bg-amber-600/80 hover:bg-amber-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-amber-500/30 transition cursor-pointer"
-              title="Stop sharing video/audio and return to audience"
-            >
-              Leave Stage
-            </button>
-          )}
+            {isLocalUserOnStage && (
+              <button
+                onClick={handleLeaveStage}
+                className="bg-amber-600/80 hover:bg-amber-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-amber-500/30 transition cursor-pointer"
+                title="Stop sharing video/audio and return to audience"
+              >
+                Leave Stage
+              </button>
+            )}
 
-          {isHost ? (
-            <EndStreamButton streamId={room?.name || 'stream_stage'} />
-          ) : (
-            <button
-              onClick={handleLeaveRoom}
-              className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
-              title="Leave room"
-            >
-              Leave Room
-            </button>
-          )}
-        </div>
+            {isHost ? (
+              <EndStreamButton streamId={room?.name || 'stream_stage'} />
+            ) : (
+              <button
+                onClick={handleLeaveRoom}
+                className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
+                title="Leave room"
+              >
+                Leave Room
+              </button>
+            )}
+          </div>
       </header>
 
       {/* 3x3 GRID */}
