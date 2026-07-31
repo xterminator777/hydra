@@ -1,6 +1,7 @@
 // app/api/token/route.ts
 import { AccessToken } from 'livekit-server-sdk';
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +15,30 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+    // Initialize Supabase Client
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // 🟢 PERSISTENT BAN CHECK: Reject banned participants
+    const { data: isBanned, error: banError } = await supabase
+      .from('banned_users')
+      .select('id')
+      .ilike('livekit_room_name', room)
+      .or(`identity.eq.${identity},identity.eq.host_${identity}`)
+      .maybeSingle();
+
+    if (banError) {
+      console.error('Error checking ban status:', banError.message);
+    }
+
+    if (isBanned) {
+      return NextResponse.json(
+        { error: 'You have been banned from this room by the host.' },
+        { status: 403 }
+      );
+    }
 
     if (!apiKey || !apiSecret) {
       return NextResponse.json(

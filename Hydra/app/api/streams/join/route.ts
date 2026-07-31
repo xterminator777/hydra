@@ -43,6 +43,25 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // 🟢 2. PERSISTENT BAN CHECK: Block banned identities from acquiring tokens
+    const { data: isBanned, error: banError } = await supabase
+      .from('banned_users')
+      .select('id')
+      .ilike('livekit_room_name', roomName)
+      .or(`identity.eq.${viewerIdentity},identity.eq.host_${viewerIdentity}`)
+      .maybeSingle();
+
+    if (banError) {
+      console.error('Error checking ban status:', banError.message);
+    }
+
+    if (isBanned) {
+      return NextResponse.json(
+        { error: 'You have been banned from this room by the host.' },
+        { status: 403 }
+      );
+    }
+
         const apiKey = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;
 
