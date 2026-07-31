@@ -27,18 +27,25 @@ const AVAILABLE_GIFTS = [
   { type: 'crown', icon: '👑', cost: 500 },
 ] as const;
 
-// 1. ISOLATED SEAT TILE COMPONENT
+// 1. ISOLATED SEAT TILE COMPONENT (With Click-to-Open Moderation Menu)
 const SeatTile = React.memo(function SeatTile({
   participant,
   index,
   isHost,
+  roomName,
+  isLocalHost,
+  hostUserId,
 }: {
   participant: Participant;
   index: number;
   isHost?: boolean;
+  isLocalHost?: boolean;
+  roomName?: string;
+  hostUserId?: string;
 }) {
   const isSpeaking = useIsSpeaking(participant);
   const isMuted = !participant.isMicrophoneEnabled;
+  const [showMenu, setShowMenu] = useState(false);
 
   const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
   const cameraTrack = cameraPublication?.track;
@@ -47,8 +54,53 @@ const SeatTile = React.memo(function SeatTile({
     ? participant.identity.replace(/^host_/, '')
     : `Guest ${index}`;
 
+  const handleModerate = async (action: 'kick' | 'ban', e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevents tile click toggle
+    setShowMenu(false);
+
+    if (!roomName || !participant.identity) return;
+
+    const confirmed = confirm(
+      `Are you sure you want to ${action.toUpperCase()} @${displayIdentity}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch('/api/streams/kick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomName,
+          identity: participant.identity,
+          action,
+          hostUserId,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`Failed to ${action}: ${data.error}`);
+      }
+    } catch (err) {
+      console.error(`Error performing ${action}:`, err);
+    }
+  };
+
+  const handleTileClick = () => {
+    // Only open the menu if the local user is Host and they clicked a guest tile
+    if (isLocalHost && !isHost) {
+      setShowMenu((prev) => !prev);
+    }
+  };
+
   return (
-    <div className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800">
+    <div 
+      onClick={handleTileClick}
+      className={`w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800 transition ${
+        isLocalHost && !isHost ? 'cursor-pointer hover:border-slate-700' : ''
+      }`}
+    >
+      {/* Active speaker border overlay */}
       {isSpeaking && (
         <div className="absolute inset-0 border-2 border-cyan-400 z-10 pointer-events-none rounded-lg ring-2 ring-cyan-400/40" />
       )}
@@ -68,12 +120,47 @@ const SeatTile = React.memo(function SeatTile({
         </div>
       )}
 
+      {/* 🔴 HOST CLICK-TO-OPEN MODERATION MENU */}
+      {isLocalHost && !isHost && showMenu && (
+        <div 
+          className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center gap-1.5 p-2 animate-fadeIn"
+          onClick={(e) => e.stopPropagation()} // Prevent clicking overlay from closing immediately
+        >
+          <span className="text-[10px] font-bold text-slate-300 truncate w-full text-center mb-0.5">
+            @{displayIdentity}
+          </span>
+          <button
+            onClick={(e) => handleModerate('kick', e)}
+            className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer"
+          >
+            ⚠️ Kick Guest
+          </button>
+          <button
+            onClick={(e) => handleModerate('ban', e)}
+            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer"
+          >
+            🚫 Ban User
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+            }}
+            className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] py-1 rounded transition mt-0.5 cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Mic Status Indicator */}
       {isMuted && (
         <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
           🔇
         </div>
       )}
 
+      {/* Bottom Label Tag */}
       <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
         <span className="font-semibold truncate max-w-[65px] text-white">
           {displayIdentity}
@@ -115,6 +202,21 @@ export function MultiSeatStage() {
       setTimeout(() => setCopied(false), 2000); // Reset button label after 2s
     });
   };
+
+
+  // 🟢 State for authenticated host user ID
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // 🟢 Fetch current user ID on mount
+  useEffect(() => {
+    async function loadCurrentUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    }
+    loadCurrentUser();
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -365,42 +467,42 @@ export function MultiSeatStage() {
             </span>
           </div>
         </div>
-          {/* 🔗 Share Stream Link Button */}
-          <button
-            onClick={handleCopyShareLink}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1 rounded-lg border border-white/10 transition cursor-pointer flex items-center gap-1.5"
-            title="Copy watch link to share"
-          >
-            <span>{copied ? '✅ Copied!' : '🔗 Share Link'}</span>
-          </button>
+        {/* 🔗 Share Stream Link Button */}
+        <button
+          onClick={handleCopyShareLink}
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1 rounded-lg border border-white/10 transition cursor-pointer flex items-center gap-1.5"
+          title="Copy watch link to share"
+        >
+          <span>{copied ? '✅ Copied!' : '🔗 Share Link'}</span>
+        </button>
 
-          <div className="flex items-center gap-2">
-            <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
-              👥 {participants.length}
-            </span>
+        <div className="flex items-center gap-2">
+          <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
+            👥 {participants.length}
+          </span>
 
-            {isLocalUserOnStage && (
-              <button
-                onClick={handleLeaveStage}
-                className="bg-amber-600/80 hover:bg-amber-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-amber-500/30 transition cursor-pointer"
-                title="Stop sharing video/audio and return to audience"
-              >
-                Leave Stage
-              </button>
-            )}
+          {isLocalUserOnStage && (
+            <button
+              onClick={handleLeaveStage}
+              className="bg-amber-600/80 hover:bg-amber-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-amber-500/30 transition cursor-pointer"
+              title="Stop sharing video/audio and return to audience"
+            >
+              Leave Stage
+            </button>
+          )}
 
-            {isHost ? (
-              <EndStreamButton streamId={room?.name || 'stream_stage'} />
-            ) : (
-              <button
-                onClick={handleLeaveRoom}
-                className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
-                title="Leave room"
-              >
-                Leave Room
-              </button>
-            )}
-          </div>
+          {isHost ? (
+            <EndStreamButton streamId={room?.name || 'stream_stage'} />
+          ) : (
+            <button
+              onClick={handleLeaveRoom}
+              className="bg-red-600/80 hover:bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-red-500/30 transition cursor-pointer"
+              title="Leave room"
+            >
+              Leave Room
+            </button>
+          )}
+        </div>
       </header>
 
       {/* 3x3 GRID */}
@@ -413,6 +515,9 @@ export function MultiSeatStage() {
                   participant={participant}
                   index={index}
                   isHost={index === 0}
+                  isLocalHost={isHost}
+                  roomName={room?.name}
+                  hostUserId={currentUserId || undefined} // 🟢 Fixed: passes the fetched user ID                
                 />
               </ParticipantContext.Provider>
             );
