@@ -8,7 +8,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'OsirisCore Tech',
+  title: 'NeoPulse.live',
   description: 'Multi-seat live streaming and interactive video broadcasts.',
   icons: {
     icon: '/favicon.ico',
