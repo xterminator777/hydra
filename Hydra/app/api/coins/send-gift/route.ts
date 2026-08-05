@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function POST(request: Request) {
   try {
-    const { userId, hostId, giftCost, giftType, roomName } = await request.json();
+    const { userId, recipientUsername, giftCost, giftType, roomName } = await request.json();
 
     if (!userId || !giftCost || giftCost <= 0) {
       return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 });
@@ -14,28 +14,28 @@ export async function POST(request: Request) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 1. Fetch sender's wallet balance
-    const { data: wallet, error: walletErr } = await supabase
+    const { data: senderWallet, error: walletErr } = await supabase
       .from('wallets')
       .select('balance')
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (walletErr || !wallet) {
-      return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
+    if (walletErr || !senderWallet) {
+      return NextResponse.json({ error: 'Sender wallet not found' }, { status: 404 });
     }
 
-    if (wallet.balance < giftCost) {
+    if (senderWallet.balance < giftCost) {
       return NextResponse.json(
-        { error: 'Insufficient coin balance! Please top up.' },
+        { error: 'Insufficient coin balance!' },
         { status: 402 }
       );
     }
 
     // 2. Deduct coins from sender
-    const newBalance = wallet.balance - giftCost;
+    const newSenderBalance = senderWallet.balance - giftCost;
     await supabase
       .from('wallets')
-      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .update({ balance: newSenderBalance, updated_at: new Date().toISOString() })
       .eq('user_id', userId);
 
     // 3. Log sender transaction
@@ -44,25 +44,44 @@ export async function POST(request: Request) {
       amount: -giftCost,
       type: 'gift_send',
       reference_id: roomName,
-      description: `Sent ${giftType} gift (${giftCost} coins)`,
+      description: `Sent ${giftType} gift to @${recipientUsername || 'host'}`,
     });
 
-    // 4. (Optional) Credit host's wallet if hostId is provided
-    if (hostId && hostId !== userId) {
-      const { data: hostWallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', hostId)
+    // 4. 🟢 CREDIT RECIPIENT'S WALLET
+    if (recipientUsername) {
+      // Resolve recipient username to profile user_id
+      const { data: recipientProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', recipientUsername)
         .maybeSingle();
 
-      if (hostWallet) {
-        await supabase
-          .from('wallets')
-          .update({ balance: hostWallet.balance + giftCost })
-          .eq('user_id', hostId);
+      if (recipientProfile?.id) {
+        const recipientId = recipientProfile.id;
 
+        // Fetch recipient wallet
+        const { data: recipientWallet } = await supabase
+          .from('wallets')
+          .select('balance')
+          .eq('user_id', recipientId)
+          .maybeSingle();
+
+        const currentRecipientBalance = recipientWallet?.balance || 0;
+        const newRecipientBalance = currentRecipientBalance + giftCost;
+
+        // Credit recipient wallet
+        await supabase.from('wallets').upsert(
+          {
+            user_id: recipientId,
+            balance: newRecipientBalance,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
+
+        // Log recipient transaction
         await supabase.from('coin_transactions').insert({
-          user_id: hostId,
+          user_id: recipientId,
           amount: giftCost,
           type: 'gift_receive',
           reference_id: roomName,
@@ -71,7 +90,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, newBalance });
+    return NextResponse.json({ success: true, newBalance: newSenderBalance });
   } catch (err: any) {
     console.error('Error processing gift transaction:', err);
     return NextResponse.json({ error: err.message || 'Transaction failed' }, { status: 500 });

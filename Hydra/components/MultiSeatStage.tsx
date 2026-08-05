@@ -15,6 +15,7 @@ import { Track, RoomEvent, Participant } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
 import { EndStreamButton } from './EndStreamButton';
 import { RechargeModal } from './RechargeModal';
+import { TargetedGiftModal } from './TargetedGiftModal';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -27,7 +28,7 @@ const AVAILABLE_GIFTS = [
   { type: 'crown', icon: '👑', cost: 500 },
 ] as const;
 
-// 1. ISOLATED SEAT TILE COMPONENT (With Click-to-Open Moderation Menu)
+// 1. ISOLATED SEAT TILE COMPONENT (With Click-to-Open Action Menu)
 const SeatTile = React.memo(function SeatTile({
   participant,
   index,
@@ -35,6 +36,7 @@ const SeatTile = React.memo(function SeatTile({
   roomName,
   isLocalHost,
   hostUserId,
+  onOpenGiftMenu,
 }: {
   participant: Participant;
   index: number;
@@ -42,6 +44,7 @@ const SeatTile = React.memo(function SeatTile({
   isLocalHost?: boolean;
   roomName?: string;
   hostUserId?: string;
+  onOpenGiftMenu?: (targetIdentity: string) => void;
 }) {
   const isSpeaking = useIsSpeaking(participant);
   const isMuted = !participant.isMicrophoneEnabled;
@@ -55,7 +58,7 @@ const SeatTile = React.memo(function SeatTile({
     : `Guest ${index}`;
 
   const handleModerate = async (action: 'kick' | 'ban', e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevents tile click toggle
+    e.stopPropagation();
     setShowMenu(false);
 
     if (!roomName || !participant.identity) return;
@@ -86,61 +89,80 @@ const SeatTile = React.memo(function SeatTile({
     }
   };
 
-  const handleTileClick = () => {
-    // Only open the menu if the local user is Host and they clicked a guest tile
-    if (isLocalHost && !isHost) {
-      setShowMenu((prev) => !prev);
-    }
+  const handleTileClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowMenu((prev) => !prev);
   };
 
   return (
     <div
       onClick={handleTileClick}
-      className={`w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800 transition ${
-        isLocalHost && !isHost ? 'cursor-pointer hover:border-slate-700' : ''
-      }`}
+      className="w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800 transition cursor-pointer hover:border-slate-700 select-none"
     >
       {/* Active speaker border overlay */}
       {isSpeaking && (
-        <div className="absolute inset-0 border-2 border-cyan-400 z-10 pointer-events-none rounded-lg ring-2 ring-cyan-400/40" />
+        <div className="absolute inset-0 border-2 border-[#03fcad] z-10 pointer-events-none rounded-lg ring-2 ring-[#03fcad]/40" />
       )}
 
       {cameraTrack && cameraPublication ? (
-        <VideoTrack
-          trackRef={{
-            participant,
-            source: Track.Source.Camera,
-            publication: cameraPublication,
-          }}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
+        <div className="w-full h-full pointer-events-none">
+          <VideoTrack
+            trackRef={{
+              participant,
+              source: Track.Source.Camera,
+              publication: cameraPublication,
+            }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </div>
       ) : (
-        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
+        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-slate-300 pointer-events-none">
           {displayIdentity.charAt(0).toUpperCase() || 'U'}
         </div>
       )}
 
-      {/* 🔴 HOST CLICK-TO-OPEN MODERATION MENU */}
-      {isLocalHost && !isHost && showMenu && (
+      {/* 🔴 CLICK-TO-OPEN ACTION MENU */}
+      {showMenu && (
         <div
-          className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center gap-1.5 p-2 animate-fadeIn"
-          onClick={(e) => e.stopPropagation()} // Prevent clicking overlay from closing immediately
+          className="absolute inset-0 bg-slate-950/95 backdrop-blur-md z-30 flex flex-col items-center justify-center gap-1.5 p-2 animate-fadeIn"
+          onClick={(e) => e.stopPropagation()}
         >
-          <span className="text-[10px] font-bold text-slate-300 truncate w-full text-center mb-0.5">
+          <span className="text-[10px] font-bold text-[#03fcad] truncate w-full text-center mb-0.5">
             @{displayIdentity}
           </span>
+
+          {/* 🎁 Send Gift Button (Available for everyone) */}
           <button
-            onClick={(e) => handleModerate('kick', e)}
-            className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+              if (onOpenGiftMenu) {
+                onOpenGiftMenu(displayIdentity);
+              }
+            }}
+            className="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer flex items-center justify-center gap-1"
           >
-            ⚠️ Kick Guest
+            🎁 Send Gift
           </button>
-          <button
-            onClick={(e) => handleModerate('ban', e)}
-            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer"
-          >
-            🚫 Ban User
-          </button>
+
+          {/* Host Moderation Options (Only shown to Host on Guest tiles) */}
+          {isLocalHost && !isHost && (
+            <>
+              <button
+                onClick={(e) => handleModerate('kick', e)}
+                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer"
+              >
+                ⚠️ Kick Guest
+              </button>
+              <button
+                onClick={(e) => handleModerate('ban', e)}
+                className="w-full bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] py-1.5 rounded transition shadow cursor-pointer"
+              >
+                🚫 Ban User
+              </button>
+            </>
+          )}
+
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -155,19 +177,19 @@ const SeatTile = React.memo(function SeatTile({
 
       {/* Mic Status Indicator */}
       {isMuted && (
-        <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10">
+        <div className="absolute top-1 right-1 bg-black/60 p-0.5 rounded-full text-[8px] z-10 pointer-events-none">
           🔇
         </div>
       )}
 
       {/* Bottom Label Tag */}
-      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10">
+      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10 pointer-events-none">
         <span className="font-semibold truncate max-w-[65px] text-white">
           {displayIdentity}
         </span>
         {isHost && (
           <div className="flex items-center gap-1">
-            <span className="text-cyan-400 font-bold text-[8px]">HOST</span>
+            <span className="text-[#03fcad] font-bold text-[8px]">HOST</span>
           </div>
         )}
       </div>
@@ -191,34 +213,32 @@ export function MultiSeatStage() {
 
   const [copied, setCopied] = useState(false);
 
-  // 🪙 MONETIZATION STATE
+  // 🪙 MONETIZATION & TARGETED GIFTING STATE
   const [userCoins, setUserCoins] = useState<number>(0);
   const [rechargeOpen, setRechargeOpen] = useState(false);
-
-  // Function to copy the shareable watch link to clipboard
-  const handleCopyShareLink = () => {
-    if (!room?.name) return;
-
-    // Constructs https://neopulse.live/watch/room_tech_12345
-    const shareUrl = `${window.location.origin}/watch/${room.name}`;
-
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000); // Reset button label after 2s
-    });
-  };
+  const [giftTargetUser, setGiftTargetUser] = useState<string | null>(null);
 
   // State for authenticated local user ID
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // 🟢 Fetch current user ID & Wallet Balance on mount
+  // Function to copy the shareable watch link to clipboard
+  const handleCopyShareLink = () => {
+    if (!room?.name) return;
+    const shareUrl = `${window.location.origin}/watch/${room.name}`;
+
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  // Fetch current user ID & Wallet Balance on mount
   useEffect(() => {
     async function loadUserAndWallet() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
 
-        // Fetch current coin balance from 'wallets'
         const { data: wallet } = await supabase
           .from('wallets')
           .select('balance')
@@ -237,13 +257,11 @@ export function MultiSeatStage() {
     let isMounted = true;
 
     async function fetchStreamDetails() {
-      // 1. Fallback to URL path if room?.name hasn't hydrated yet
       const urlRoomName = window.location.pathname.split('/').pop();
       const targetRoomName = room?.name || (urlRoomName !== 'watch' ? urlRoomName : null);
 
       if (!targetRoomName) return;
 
-      // 2. Query 'streams' strictly by room name (case-insensitive)
       const { data: streamData, error: streamError } = await supabase
         .from('streams')
         .select('title, host_id')
@@ -263,7 +281,6 @@ export function MultiSeatStage() {
         if (streamData.host_id) {
           setHostUserId(streamData.host_id);
 
-          // Query 'profiles' using stream's host_id
           const { data: profileData } = await supabase
             .from('profiles')
             .select('username')
@@ -291,8 +308,11 @@ export function MultiSeatStage() {
     };
   }, [room?.name, room?.state]);
 
-  // 🟢 COIN DEDUCTION & GIFT HANDLER
-  const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
+  // 🟢 TARGETED GIFT HANDLER
+  const handleSendGift = async (
+    gift: (typeof AVAILABLE_GIFTS)[number],
+    recipientUsername?: string
+  ) => {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
@@ -301,19 +321,19 @@ export function MultiSeatStage() {
     }
 
     if (userCoins < gift.cost) {
-      // Open Recharge modal if balance is insufficient
       setRechargeOpen(true);
       return;
     }
 
     try {
-      // 1. Call API route to process wallet deduction in Supabase
+      const targetRecipient = recipientUsername || hostUsername || 'Host';
+
       const response = await fetch('/api/coins/send-gift', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          hostId: hostUserId,
+          recipientUsername: targetRecipient,
           giftCost: gift.cost,
           giftType: gift.type,
           roomName: room?.name,
@@ -327,14 +347,14 @@ export function MultiSeatStage() {
         return;
       }
 
-      // 2. Update local state with new balance
       setUserCoins(data.newBalance);
 
-      // 3. Broadcast gift JSON payload over WebRTC data channel for stage animation
+      // Broadcast targeted gift event over LiveKit
       const giftPayload = JSON.stringify({
         isGift: true,
         giftType: gift.type,
         icon: gift.icon,
+        recipientName: targetRecipient,
         senderName: localParticipant.identity
           ? localParticipant.identity.replace(/^host_/, '')
           : 'Anonymous',
@@ -587,6 +607,7 @@ export function MultiSeatStage() {
                   isLocalHost={isHost}
                   roomName={room?.name}
                   hostUserId={currentUserId || undefined}
+                  onOpenGiftMenu={(username) => setGiftTargetUser(username)}
                 />
               </ParticipantContext.Provider>
             );
@@ -662,6 +683,17 @@ export function MultiSeatStage() {
         onClose={() => setRechargeOpen(false)}
         userId={currentUserId || ''}
         onBalanceUpdated={(newBalance) => setUserCoins(newBalance)}
+      />
+
+      {/* 🎁 TARGETED GIFT MODAL */}
+      <TargetedGiftModal
+        isOpen={Boolean(giftTargetUser)}
+        onClose={() => setGiftTargetUser(null)}
+        targetUsername={giftTargetUser || ''}
+        userCoins={userCoins}
+        availableGifts={AVAILABLE_GIFTS}
+        onSendGift={(gift, recipient) => handleSendGift(gift, recipient)}
+        onOpenRecharge={() => setRechargeOpen(true)}
       />
     </div>
   );
