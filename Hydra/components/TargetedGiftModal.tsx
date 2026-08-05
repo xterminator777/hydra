@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-interface Gift {
+export interface Gift {
   type: string;
   icon: string;
   cost: number;
@@ -37,7 +37,7 @@ export function TargetedGiftModal({
             <span className="text-[10px] text-slate-400 uppercase font-mono block">Send Gift To</span>
             <h2 className="text-sm font-bold text-[#03fcad]">@{targetUsername}</h2>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xs">
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xs cursor-pointer">
             ✕
           </button>
         </div>

@@ -28,7 +28,7 @@ const AVAILABLE_GIFTS = [
   { type: 'crown', icon: '👑', cost: 500 },
 ] as const;
 
-// 1. ISOLATED SEAT TILE COMPONENT (With Click-to-Open Action Menu)
+// 1. ISOLATED SEAT TILE COMPONENT
 const SeatTile = React.memo(function SeatTile({
   participant,
   index,
@@ -37,6 +37,7 @@ const SeatTile = React.memo(function SeatTile({
   isLocalHost,
   hostUserId,
   onOpenGiftMenu,
+  latestGift,
 }: {
   participant: Participant;
   index: number;
@@ -45,10 +46,12 @@ const SeatTile = React.memo(function SeatTile({
   roomName?: string;
   hostUserId?: string;
   onOpenGiftMenu?: (targetIdentity: string) => void;
+  latestGift?: { recipientName: string; amount: number; timestamp: number } | null;
 }) {
   const isSpeaking = useIsSpeaking(participant);
   const isMuted = !participant.isMicrophoneEnabled;
   const [showMenu, setShowMenu] = useState(false);
+  const [sessionEarnedCoins, setSessionEarnedCoins] = useState<number>(0);
 
   const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
   const cameraTrack = cameraPublication?.track;
@@ -56,6 +59,55 @@ const SeatTile = React.memo(function SeatTile({
   const displayIdentity = participant.identity
     ? participant.identity.replace(/^host_/, '')
     : `Guest ${index}`;
+
+  // Fetch initial session earnings on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchInitialSessionEarnings() {
+      if (!participant.identity || !roomName) return;
+
+      const rawUsername = participant.identity.replace(/^host_/, '');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', rawUsername)
+        .maybeSingle();
+
+      if (profile?.id) {
+        const { data: txs, error } = await supabase
+          .from('coin_transactions')
+          .select('amount')
+          .eq('user_id', profile.id)
+          .eq('type', 'gift_receive')
+          .eq('reference_id', roomName);
+
+        if (!error && txs && isMounted) {
+          const totalSessionCoins = txs.reduce((sum, tx) => sum + tx.amount, 0);
+          setSessionEarnedCoins(totalSessionCoins);
+        }
+      }
+    }
+
+    fetchInitialSessionEarnings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [participant.identity, roomName]);
+
+  // Instant Optimistic State Update on Gift Event
+  useEffect(() => {
+    if (!latestGift) return;
+
+    const targetName = latestGift.recipientName.toLowerCase().replace(/^@/, '');
+    const currentTileName = displayIdentity.toLowerCase();
+
+    // Check if this tile belongs to the gift recipient
+    if (targetName === currentTileName) {
+      setSessionEarnedCoins((prev) => prev + latestGift.amount);
+    }
+  }, [latestGift, displayIdentity]);
 
   const handleModerate = async (action: 'kick' | 'ban', e: React.MouseEvent) => {
     e.stopPropagation();
@@ -121,7 +173,7 @@ const SeatTile = React.memo(function SeatTile({
         </div>
       )}
 
-      {/* 🔴 CLICK-TO-OPEN ACTION MENU */}
+      {/* CLICK-TO-OPEN ACTION MENU */}
       {showMenu && (
         <div
           className="absolute inset-0 bg-slate-950/95 backdrop-blur-md z-30 flex flex-col items-center justify-center gap-1.5 p-2 animate-fadeIn"
@@ -131,7 +183,6 @@ const SeatTile = React.memo(function SeatTile({
             @{displayIdentity}
           </span>
 
-          {/* 🎁 Send Gift Button (Available for everyone) */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -145,7 +196,6 @@ const SeatTile = React.memo(function SeatTile({
             🎁 Send Gift
           </button>
 
-          {/* Host Moderation Options (Only shown to Host on Guest tiles) */}
           {isLocalHost && !isHost && (
             <>
               <button
@@ -183,15 +233,19 @@ const SeatTile = React.memo(function SeatTile({
       )}
 
       {/* Bottom Label Tag */}
-      <div className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10 pointer-events-none">
+      <div className="absolute bottom-1 left-1 right-1 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded flex items-center justify-between text-[9px] z-10 pointer-events-none border border-white/10">
         <span className="font-semibold truncate max-w-[65px] text-white">
           {displayIdentity}
         </span>
-        {isHost && (
-          <div className="flex items-center gap-1">
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-yellow-400 font-mono font-bold text-[8px] flex items-center gap-0.5 bg-yellow-500/10 px-1 py-0.5 rounded border border-yellow-500/20">
+            🪙 {sessionEarnedCoins}
+          </span>
+          {isHost && (
             <span className="text-[#03fcad] font-bold text-[8px]">HOST</span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -213,15 +267,19 @@ export function MultiSeatStage() {
 
   const [copied, setCopied] = useState(false);
 
-  // 🪙 MONETIZATION & TARGETED GIFTING STATE
+  // MONETIZATION & TARGETED GIFTING STATE
   const [userCoins, setUserCoins] = useState<number>(0);
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [giftTargetUser, setGiftTargetUser] = useState<string | null>(null);
 
-  // State for authenticated local user ID
+  const [latestGift, setLatestGift] = useState<{
+    recipientName: string;
+    amount: number;
+    timestamp: number;
+  } | null>(null);
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Function to copy the shareable watch link to clipboard
   const handleCopyShareLink = () => {
     if (!room?.name) return;
     const shareUrl = `${window.location.origin}/watch/${room.name}`;
@@ -232,7 +290,6 @@ export function MultiSeatStage() {
     });
   };
 
-  // Fetch current user ID & Wallet Balance on mount
   useEffect(() => {
     async function loadUserAndWallet() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -308,9 +365,9 @@ export function MultiSeatStage() {
     };
   }, [room?.name, room?.state]);
 
-  // 🟢 TARGETED GIFT HANDLER
+  // TARGETED GIFT HANDLER
   const handleSendGift = async (
-    gift: (typeof AVAILABLE_GIFTS)[number],
+    gift: { type: string; icon: string; cost: number },
     recipientUsername?: string
   ) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -350,25 +407,20 @@ export function MultiSeatStage() {
       setUserCoins(data.newBalance);
 
       // Broadcast targeted gift event over LiveKit
+      // Note: We DO NOT manually call triggerGiftAnimation here anymore.
+      // useChat listens to this broadcast and handles triggerGiftAnimation once for all clients (including local sender).
       const giftPayload = JSON.stringify({
         isGift: true,
         giftType: gift.type,
         icon: gift.icon,
         recipientName: targetRecipient,
+        giftCost: gift.cost,
         senderName: localParticipant.identity
           ? localParticipant.identity.replace(/^host_/, '')
           : 'Anonymous',
       });
 
       await send(giftPayload);
-
-      triggerGiftAnimation(
-        localParticipant.identity
-          ? localParticipant.identity.replace(/^host_/, '')
-          : 'You',
-        gift.type,
-        gift.icon
-      );
     } catch (err) {
       console.error('Error executing gift transaction:', err);
     }
@@ -376,16 +428,26 @@ export function MultiSeatStage() {
 
   const triggerGiftAnimation = (
     senderName: string,
-    giftType: 'rose' | 'diamond' | 'rocket' | 'crown',
-    icon: string
+    giftType: string,
+    icon: string,
+    recipientName?: string,
+    giftCost?: number
   ) => {
     const newGift: GiftEvent = {
       id: `${Date.now()}-${Math.random()}`,
       senderName,
-      giftType,
+      giftType: giftType as GiftEvent['giftType'],
       icon,
     };
     setActiveGifts((prev) => [...prev, newGift]);
+
+    if (recipientName && giftCost) {
+      setLatestGift({
+        recipientName,
+        amount: giftCost,
+        timestamp: Date.now(),
+      });
+    }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -407,7 +469,9 @@ export function MultiSeatStage() {
             ? latestMsg.from.identity.replace(/^host_/, '')
             : 'Viewer',
           parsed.giftType,
-          parsed.icon
+          parsed.icon,
+          parsed.recipientName,
+          parsed.giftCost
         );
       }
     } catch {
@@ -544,7 +608,7 @@ export function MultiSeatStage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* 🪙 COIN BALANCE & TOP-UP CHIP */}
+          {/* COIN BALANCE & TOP-UP CHIP */}
           <button
             onClick={() => setRechargeOpen(true)}
             className="bg-slate-900 hover:bg-slate-800 border border-yellow-500/40 text-yellow-400 font-mono text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
@@ -557,7 +621,7 @@ export function MultiSeatStage() {
             </span>
           </button>
 
-          {/* 🔗 Share Stream Link Button */}
+          {/* Share Stream Link Button */}
           <button
             onClick={handleCopyShareLink}
             className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1 rounded-lg border border-white/10 transition cursor-pointer flex items-center gap-1.5"
@@ -608,6 +672,7 @@ export function MultiSeatStage() {
                   roomName={room?.name}
                   hostUserId={currentUserId || undefined}
                   onOpenGiftMenu={(username) => setGiftTargetUser(username)}
+                  latestGift={latestGift}
                 />
               </ParticipantContext.Provider>
             );
@@ -677,7 +742,7 @@ export function MultiSeatStage() {
         </form>
       </div>
 
-      {/* 🪙 RECHARGE COINS MODAL */}
+      {/* RECHARGE COINS MODAL */}
       <RechargeModal
         isOpen={rechargeOpen}
         onClose={() => setRechargeOpen(false)}
@@ -685,7 +750,7 @@ export function MultiSeatStage() {
         onBalanceUpdated={(newBalance) => setUserCoins(newBalance)}
       />
 
-      {/* 🎁 TARGETED GIFT MODAL */}
+      {/* TARGETED GIFT MODAL */}
       <TargetedGiftModal
         isOpen={Boolean(giftTargetUser)}
         onClose={() => setGiftTargetUser(null)}
