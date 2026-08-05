@@ -1,5 +1,4 @@
 'use client';
-// Have NOT fixed room titles for viewers. Ignore last commit for that part. 
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -15,6 +14,7 @@ import {
 import { Track, RoomEvent, Participant } from 'livekit-client';
 import { GiftOverlay, GiftEvent } from './GiftOverlay';
 import { EndStreamButton } from './EndStreamButton';
+import { RechargeModal } from './RechargeModal';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -94,7 +94,7 @@ const SeatTile = React.memo(function SeatTile({
   };
 
   return (
-    <div 
+    <div
       onClick={handleTileClick}
       className={`w-full h-full relative flex items-center justify-center bg-slate-950 overflow-hidden rounded-lg border border-slate-800 transition ${
         isLocalHost && !isHost ? 'cursor-pointer hover:border-slate-700' : ''
@@ -122,7 +122,7 @@ const SeatTile = React.memo(function SeatTile({
 
       {/* 🔴 HOST CLICK-TO-OPEN MODERATION MENU */}
       {isLocalHost && !isHost && showMenu && (
-        <div 
+        <div
           className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center gap-1.5 p-2 animate-fadeIn"
           onClick={(e) => e.stopPropagation()} // Prevent clicking overlay from closing immediately
         >
@@ -184,17 +184,22 @@ export function MultiSeatStage() {
 
   const [streamTitle, setStreamTitle] = useState<string>('');
   const [hostUsername, setHostUsername] = useState<string>('');
+  const [hostUserId, setHostUserId] = useState<string | null>(null);
 
   const room = useRoomContext();
   const router = useRouter();
 
   const [copied, setCopied] = useState(false);
 
+  // 🪙 MONETIZATION STATE
+  const [userCoins, setUserCoins] = useState<number>(0);
+  const [rechargeOpen, setRechargeOpen] = useState(false);
+
   // Function to copy the shareable watch link to clipboard
   const handleCopyShareLink = () => {
     if (!room?.name) return;
 
-    // Constructs https://osiriscore.tech/watch/room_tech_12345
+    // Constructs https://neopulse.live/watch/room_tech_12345
     const shareUrl = `${window.location.origin}/watch/${room.name}`;
 
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -203,19 +208,29 @@ export function MultiSeatStage() {
     });
   };
 
-
-  // 🟢 State for authenticated host user ID
+  // State for authenticated local user ID
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // 🟢 Fetch current user ID on mount
+  // 🟢 Fetch current user ID & Wallet Balance on mount
   useEffect(() => {
-    async function loadCurrentUser() {
+    async function loadUserAndWallet() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
+
+        // Fetch current coin balance from 'wallets'
+        const { data: wallet } = await supabase
+          .from('wallets')
+          .select('balance')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (wallet) {
+          setUserCoins(wallet.balance);
+        }
       }
     }
-    loadCurrentUser();
+    loadUserAndWallet();
   }, []);
 
   useEffect(() => {
@@ -241,13 +256,14 @@ export function MultiSeatStage() {
       }
 
       if (streamData && isMounted) {
-        // Set real stream title from DB
         if (streamData.title) {
           setStreamTitle(streamData.title);
         }
 
-        // 3. Query 'profiles' strictly using the stream's host_id
         if (streamData.host_id) {
+          setHostUserId(streamData.host_id);
+
+          // Query 'profiles' using stream's host_id
           const { data: profileData } = await supabase
             .from('profiles')
             .select('username')
@@ -263,7 +279,6 @@ export function MultiSeatStage() {
 
     fetchStreamDetails();
 
-    // 4. Retry after 1.5s if the WebRTC room state was still connecting during mount
     const retryTimer = setTimeout(() => {
       if (isMounted) {
         fetchStreamDetails();
@@ -276,25 +291,67 @@ export function MultiSeatStage() {
     };
   }, [room?.name, room?.state]);
 
+  // 🟢 COIN DEDUCTION & GIFT HANDLER
   const handleSendGift = async (gift: (typeof AVAILABLE_GIFTS)[number]) => {
-    const giftPayload = JSON.stringify({
-      isGift: true,
-      giftType: gift.type,
-      icon: gift.icon,
-      senderName: localParticipant.identity
-        ? localParticipant.identity.replace(/^host_/, '')
-        : 'Anonymous',
-    });
+    const { data: { user } } = await supabase.auth.getUser();
 
-    await send(giftPayload);
+    if (!user) {
+      alert('Please log in to send gifts!');
+      return;
+    }
 
-    triggerGiftAnimation(
-      localParticipant.identity
-        ? localParticipant.identity.replace(/^host_/, '')
-        : 'You',
-      gift.type,
-      gift.icon
-    );
+    if (userCoins < gift.cost) {
+      // Open Recharge modal if balance is insufficient
+      setRechargeOpen(true);
+      return;
+    }
+
+    try {
+      // 1. Call API route to process wallet deduction in Supabase
+      const response = await fetch('/api/coins/send-gift', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          hostId: hostUserId,
+          giftCost: gift.cost,
+          giftType: gift.type,
+          roomName: room?.name,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || 'Failed to send gift.');
+        return;
+      }
+
+      // 2. Update local state with new balance
+      setUserCoins(data.newBalance);
+
+      // 3. Broadcast gift JSON payload over WebRTC data channel for stage animation
+      const giftPayload = JSON.stringify({
+        isGift: true,
+        giftType: gift.type,
+        icon: gift.icon,
+        senderName: localParticipant.identity
+          ? localParticipant.identity.replace(/^host_/, '')
+          : 'Anonymous',
+      });
+
+      await send(giftPayload);
+
+      triggerGiftAnimation(
+        localParticipant.identity
+          ? localParticipant.identity.replace(/^host_/, '')
+          : 'You',
+        gift.type,
+        gift.icon
+      );
+    } catch (err) {
+      console.error('Error executing gift transaction:', err);
+    }
   };
 
   const triggerGiftAnimation = (
@@ -457,26 +514,38 @@ export function MultiSeatStage() {
             {hostInitial}
           </div>
           <div>
-            {/* 🟢 Stream Title */}
             <h1 className="text-xs font-bold leading-none text-white capitalize">
               {displayTitle}
             </h1>
-            {/* 🟢 Host Username */}
             <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
               Host: {displayHostHandle}
             </span>
           </div>
         </div>
-        {/* 🔗 Share Stream Link Button */}
-        <button
-          onClick={handleCopyShareLink}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1 rounded-lg border border-white/10 transition cursor-pointer flex items-center gap-1.5"
-          title="Copy watch link to share"
-        >
-          <span>{copied ? '✅ Copied!' : '🔗 Share Link'}</span>
-        </button>
 
         <div className="flex items-center gap-2">
+          {/* 🪙 COIN BALANCE & TOP-UP CHIP */}
+          <button
+            onClick={() => setRechargeOpen(true)}
+            className="bg-slate-900 hover:bg-slate-800 border border-yellow-500/40 text-yellow-400 font-mono text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+            title="Click to recharge coins"
+          >
+            <span>🪙</span>
+            <span className="font-bold">{userCoins}</span>
+            <span className="text-[9px] bg-yellow-500/20 text-yellow-300 px-1 rounded font-sans uppercase">
+              + Add
+            </span>
+          </button>
+
+          {/* 🔗 Share Stream Link Button */}
+          <button
+            onClick={handleCopyShareLink}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1 rounded-lg border border-white/10 transition cursor-pointer flex items-center gap-1.5"
+            title="Copy watch link to share"
+          >
+            <span>{copied ? '✅ Copied!' : '🔗 Share Link'}</span>
+          </button>
+
           <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px] text-slate-300 font-semibold border border-white/10">
             👥 {participants.length}
           </span>
@@ -517,7 +586,7 @@ export function MultiSeatStage() {
                   isHost={index === 0}
                   isLocalHost={isHost}
                   roomName={room?.name}
-                  hostUserId={currentUserId || undefined} // 🟢 Fixed: passes the fetched user ID                
+                  hostUserId={currentUserId || undefined}
                 />
               </ParticipantContext.Provider>
             );
@@ -547,7 +616,7 @@ export function MultiSeatStage() {
           <button
             key={gift.type}
             onClick={() => handleSendGift(gift)}
-            className="flex items-center gap-1 bg-slate-800/80 hover:bg-pink-600/80 border border-white/10 hover:border-pink-400 px-2.5 py-1 rounded-full text-xs font-bold transition transform active:scale-95 shadow"
+            className="flex items-center gap-1 bg-slate-800/80 hover:bg-pink-600/80 border border-white/10 hover:border-pink-400 px-2.5 py-1 rounded-full text-xs font-bold transition transform active:scale-95 shadow cursor-pointer"
           >
             <span>{gift.icon}</span>
             <span className="text-[9px] text-yellow-400 font-mono">
@@ -586,6 +655,14 @@ export function MultiSeatStage() {
           </button>
         </form>
       </div>
+
+      {/* 🪙 RECHARGE COINS MODAL */}
+      <RechargeModal
+        isOpen={rechargeOpen}
+        onClose={() => setRechargeOpen(false)}
+        userId={currentUserId || ''}
+        onBalanceUpdated={(newBalance) => setUserCoins(newBalance)}
+      />
     </div>
   );
 }
