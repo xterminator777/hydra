@@ -28,18 +28,22 @@ export async function POST(request: Request) {
     const newBalance = currentBalance + coinsToAdd;
 
     // 2. Update or insert the new balance
+    // 🟢 2. FIXED: Pass onConflict so Supabase updates existing user_id rows
     const { error: updateErr } = await supabase
       .from('wallets')
-      .upsert({
-        user_id: userId,
-        balance: newBalance,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          user_id: userId,
+          balance: newBalance,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' } // Tells Postgres to UPDATE if user_id already exists!
+      );
 
     if (updateErr) {
       console.error('Failed to update wallet:', updateErr.message);
       return NextResponse.json({ error: 'Failed to update wallet' }, { status: 500 });
-    }
+    } 
 
     // 3. Log transaction history
     await supabase.from('coin_transactions').insert({

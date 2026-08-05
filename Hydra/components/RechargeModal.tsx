@@ -25,41 +25,35 @@ export function RechargeModal({ isOpen, onClose, userId, onBalanceUpdated }: Rec
   // Demo purchase handler (Simulates buying coins)
   const handleBuyCoins = async (coinsToAdd: number) => {
     setLoading(true);
+  try {
+    // 🟢 Call our server API route to bypass client-side RLS restriction
+    const response = await fetch('/api/coins/recharge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        coinsToAdd,
+      }),
+    });
 
-    try {
-      // Fetch current balance
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', userId)
-        .maybeSingle();
+    const data = await response.json();
 
-      const currentBalance = wallet?.balance || 0;
-      const updatedBalance = currentBalance + coinsToAdd;
-
-      // Update wallet balance
-      await supabase
-        .from('wallets')
-        .upsert({ user_id: userId, balance: updatedBalance, updated_at: new Date().toISOString() });
-
-      // Log purchase
-      await supabase.from('coin_transactions').insert({
-        user_id: userId,
-        amount: coinsToAdd,
-        type: 'purchase',
-        description: `Purchased ${coinsToAdd} coin package`,
-      });
-
-      onBalanceUpdated(updatedBalance);
-      alert(`🎉 Success! Added ${coinsToAdd} coins to your balance.`);
-      onClose();
-    } catch (err) {
-      console.error('Error adding coins:', err);
-      alert('Failed to complete purchase.');
-    } finally {
-      setLoading(false);
+    if (!response.ok) {
+      alert(`Recharge failed: ${data.error}`);
+      return;
     }
-  };
+
+    // Update parent state with the confirmed database balance
+    onBalanceUpdated(data.newBalance);
+    alert(`🎉 Success! Added ${coinsToAdd} coins to your balance.`);
+    onClose();
+  } catch (err) {
+    console.error('Error adding coins:', err);
+    alert('Failed to complete purchase.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
