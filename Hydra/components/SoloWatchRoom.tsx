@@ -11,7 +11,7 @@ import {
     useRoomContext,
     useChat,
 } from '@livekit/components-react';
-import { Track, RoomEvent, ConnectionState } from 'livekit-client';
+import { Track, RoomEvent, ConnectionState, RemoteParticipant } from 'livekit-client';
 import SoloStreamSetupModal from '@/components/SoloStreamSetupModal';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
@@ -84,6 +84,25 @@ function SoloStreamStage({
     const [publishing, setPublishing] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
 
+    // 🟢 1. FALLBACK: IF HOST UNEXPECTEDLY DROPS (Closes tab)
+    useEffect(() => {
+        if (!room || isHost) return;
+
+        const handleParticipantDisconnected = (participant: RemoteParticipant) => {
+            // If the person who disconnected matches the host's identity, boot the viewer
+            if (participant.identity === hostName || participant.identity.includes(hostName)) {
+                console.log('Host disconnected. Redirecting viewer to home...');
+                router.push('/');
+            }
+        };
+
+        room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+
+        return () => {
+            room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+        };
+    }, [room, isHost, hostName, router]);
+
     useEffect(() => {
         if (!isHost) return;
 
@@ -105,18 +124,20 @@ function SoloStreamStage({
 
         if (isHost) {
             try {
-                console.log(`Ending stream for room: ${roomName}...`);
+                // 🟢 2. BROADCAST STREAM END TO ALL VIEWERS INSTANTLY
+                await send(JSON.stringify({ isStreamEnd: true }));
+            } catch (err) {
+                console.error('Error broadcasting stream end:', err);
+            }
+
+            try {
                 const { data, error } = await supabase
                     .from('streams')
                     .update({ is_live: false })
                     .eq('livekit_room_name', roomName)
                     .select();
 
-                if (error) {
-                    console.error('Supabase update error:', error.message);
-                } else {
-                    console.log('Stream successfully marked inactive in DB:', data);
-                }
+                if (error) console.error('Supabase update error:', error.message);
             } catch (err) {
                 console.error('Failed to end stream in database:', err);
             }
@@ -212,18 +233,23 @@ function SoloStreamStage({
         }
     };
 
-    // 🟢 LISTEN FOR INCOMING GIFTS & TRIGGER FLOATING ANIMATION / COINS
+    // 🟢 3. LISTEN FOR INCOMING CHAT EVENTS (GIFTS & END STREAM)
     useEffect(() => {
         if (chatMessages.length === 0) return;
         const latestMsg = chatMessages[chatMessages.length - 1];
 
         try {
             const parsed = JSON.parse(latestMsg.message);
-            if (parsed.isGift) {
-                // Update session coin counter
-                setSessionCoins((prev) => prev + parsed.coinCost);
+            
+            // Catch Stream End Broadcast
+            if (parsed.isStreamEnd && !isHost) {
+                console.log('Host ended stream. Redirecting viewer...');
+                router.push('/');
+                return;
+            }
 
-                // Trigger floating gift animation
+            if (parsed.isGift) {
+                setSessionCoins((prev) => prev + parsed.coinCost);
                 setFloatingGifts((prev) => [...prev, { id: parsed.giftId, icon: parsed.icon }]);
 
                 setTimeout(() => {
@@ -233,7 +259,7 @@ function SoloStreamStage({
         } catch {
             // Regular chat message string
         }
-    }, [chatMessages]);
+    }, [chatMessages, isHost, router]);
 
     const hasVideoTrack = cameraTrack && cameraTrack.publication && !cameraTrack.publication.isMuted;
 
@@ -241,7 +267,7 @@ function SoloStreamStage({
         /* 📱 RESPONSIVE STAGE WRAPPER */
         <div className="relative w-full sm:max-w-[420px] h-[100dvh] sm:h-[90vh] bg-black sm:rounded-3xl border-0 sm:border border-zinc-800/80 shadow-2xl overflow-hidden flex flex-col justify-between mx-auto">
 
-            {/* 1. FULL UNCROPPED VIDEO FEED */}
+            {/* 1. FULL UNCROPPED VIDEO FEED OR FALLBACK UI */}
             <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
                 {hasVideoTrack ? (
                     <VideoTrack
@@ -249,32 +275,56 @@ function SoloStreamStage({
                         className="w-full h-full object-contain max-h-full max-w-full"
                     />
                 ) : (
+                    /* 🟢 4. SEPARATE HOST VS VIEWER FALLBACK UI */
                     <div className="flex flex-col items-center justify-center gap-3 text-center max-w-xs z-10 my-auto bg-slate-900/90 border border-white/10 p-5 rounded-2xl backdrop-blur-md shadow-2xl">
-                        <div className="w-12 h-12 rounded-full bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-2xl animate-pulse">
-                            📹
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-bold text-white">
-                                {!isConnected ? 'Connecting to Stream...' : 'Camera Access Required'}
-                            </h3>
-                            <p className="text-[11px] text-slate-400 mt-1">
-                                {!isConnected
-                                    ? 'Establishing secure WebRTC media engine connection...'
-                                    : 'Tap below to publish your camera and microphone feed.'}
-                            </p>
-                        </div>
-
-                        <button
-                            onClick={handleEnableMedia}
-                            disabled={publishing || !isConnected}
-                            className="w-full py-2.5 bg-[#03fcad] hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition cursor-pointer active:scale-95 disabled:opacity-50"
-                        >
-                            {!isConnected
-                                ? 'Connecting Engine...'
-                                : publishing
-                                    ? 'Publishing...'
-                                    : '⚡ Go Live / Start Camera'}
-                        </button>
+                        {isHost ? (
+                            <>
+                                <div className="w-12 h-12 rounded-full bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-2xl animate-pulse">
+                                    📹
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white">
+                                        {!isConnected ? 'Connecting to Stream...' : 'Camera Access Required'}
+                                    </h3>
+                                    <p className="text-[11px] text-slate-400 mt-1">
+                                        {!isConnected
+                                            ? 'Establishing secure WebRTC media engine connection...'
+                                            : 'Tap below to publish your camera and microphone feed.'}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={handleEnableMedia}
+                                    disabled={publishing || !isConnected}
+                                    className="w-full py-2.5 bg-[#03fcad] hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition cursor-pointer active:scale-95 disabled:opacity-50"
+                                >
+                                    {!isConnected
+                                        ? 'Connecting Engine...'
+                                        : publishing
+                                            ? 'Publishing...'
+                                            : '⚡ Go Live / Start Camera'}
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <div className="w-12 h-12 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-2xl animate-pulse">
+                                    📡
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white">
+                                        Stream Offline
+                                    </h3>
+                                    <p className="text-[11px] text-slate-400 mt-1">
+                                        The host has ended the stream or is not currently sharing video.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full mt-2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl shadow-lg transition cursor-pointer active:scale-95"
+                                >
+                                    Return to Home
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
