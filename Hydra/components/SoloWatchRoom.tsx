@@ -38,7 +38,7 @@ export function SoloWatchRoom({
             video={false}
             audio={false}
             data-lk-theme="default"
-            className="relative w-full h-[100dvh] bg-zinc-950 flex items-center justify-center font-sans select-none overflow-hidden"
+            className="relative w-screen h-screen bg-black overflow-hidden font-sans select-none flex items-center justify-center"
         >
             <SoloStreamStage
                 hostName={hostName}
