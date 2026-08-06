@@ -19,6 +19,7 @@ interface SoloWatchRoomProps {
     token: string;
     hostName: string;
     currentUserId?: string;
+    isHost?: boolean;
 }
 
 export function SoloWatchRoom({
@@ -26,6 +27,7 @@ export function SoloWatchRoom({
     token,
     hostName,
     currentUserId,
+    isHost = false,
 }: SoloWatchRoomProps) {
     return (
         <LiveKitRoom
@@ -38,7 +40,12 @@ export function SoloWatchRoom({
             data-lk-theme="default"
             className="relative w-full h-[100dvh] bg-black overflow-hidden font-sans select-none"
         >
-            <SoloStreamStage hostName={hostName} currentUserId={currentUserId} roomName={roomName} />
+            <SoloStreamStage
+                hostName={hostName}
+                currentUserId={currentUserId}
+                roomName={roomName}
+                isHost={isHost}
+            />
             <RoomAudioRenderer />
         </LiveKitRoom>
     );
@@ -48,10 +55,12 @@ function SoloStreamStage({
     hostName,
     currentUserId,
     roomName,
+    isHost = false,
 }: {
     hostName: string;
     currentUserId?: string;
     roomName: string;
+    isHost?: boolean;
 }) {
     const room = useRoomContext();
     const tracks = useTracks([
@@ -62,8 +71,10 @@ function SoloStreamStage({
     const participants = useRemoteParticipants();
     const { localParticipant, isCameraEnabled } = useLocalParticipant();
 
+    const [setupModalOpen, setSetupModalOpen] = useState(isHost);
+
     // 🟢 Component state hooks
-    const [setupModalOpen, setSetupModalOpen] = useState(true);
+
     const [chatMessages, setChatMessages] = useState<{ id: string; user: string; text: string }[]>([]);
     const [chatInput, setChatInput] = useState('');
     const [sessionCoins, setSessionCoins] = useState(0);
@@ -72,6 +83,12 @@ function SoloStreamStage({
     const [publishing, setPublishing] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
 
+    // 🟢 Auto-publish ONLY if the user is verified as the HOST
+    useEffect(() => {
+        if (isHost && isConnected && localParticipant && !isCameraEnabled && !setupModalOpen) {
+            handleEnableMedia();
+        }
+    }, [isConnected, localParticipant, setupModalOpen, isHost]);
     // 🟢 1. Track engine connection state
     useEffect(() => {
         if (!room) return;

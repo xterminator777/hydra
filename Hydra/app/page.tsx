@@ -278,7 +278,7 @@ export default function DirectoryPage() {
 
         {/* 📱 🟢 Solo Stream Launch Banner */}
         <Link
-          href={`/solo/${soloRoomName}?host=${userProfile?.username || 'Streamer'}`}
+          href={`/solo/${soloRoomName}?host=${userProfile?.username || 'Streamer'}&isHost=true`}
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gradient-to-r from-purple-900/40 via-slate-900 to-pink-900/40 border border-purple-500/30 rounded-2xl hover:border-purple-400 transition cursor-pointer gap-4 shadow-lg"
         >
           <div className="flex items-center gap-3">
