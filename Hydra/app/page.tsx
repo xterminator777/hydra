@@ -19,11 +19,18 @@ interface Stream {
   title: string;
   livekit_room_name: string;
   created_at: string;
-  thumbnail_url?: string;
-  categories: {
+  thumbnail_url?: string | null;
+  is_live: boolean;
+  profiles?: {
+    id: string;
+    username: string;
+    avatar_url?: string | null;
+  } | null;
+  categories?: {
+    id: string;
     name: string;
     slug: string;
-  };
+  } | null;
 }
 
 export default function DirectoryPage() {
@@ -44,7 +51,7 @@ export default function DirectoryPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 🟢 Fixed: Generated once on client to prevent SSR hydration mismatch
+  // 🟢 Generated once on client to prevent SSR hydration mismatch
   const [soloRoomName, setSoloRoomName] = useState<string>('solo_room');
 
   useEffect(() => {
@@ -100,27 +107,53 @@ export default function DirectoryPage() {
     }
   };
 
-  // 2. Fetch Active Streams
+  // 2. Fetch Active Streams with Realtime Subscription
   const fetchStreams = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const url = selectedCategory
-        ? `/api/streams?category=${selectedCategory}`
-        : '/api/streams';
+      let query = supabase
+        .from('streams')
+        .select(`
+          id,
+          title,
+          livekit_room_name,
+          thumbnail_url,
+          is_live,
+          created_at,
+          profiles (
+            id,
+            username,
+            avatar_url
+          ),
+          categories (
+            id,
+            name,
+            slug
+          )
+        `)
+        .eq('is_live', true)
+        .order('created_at', { ascending: false });
 
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load streams');
+      if (selectedCategory) {
+        query = query.eq('categories.slug', selectedCategory);
       }
 
-      setStreams(data.streams || []);
+      const { data, error: queryError } = await query;
+
+      if (queryError) throw queryError;
+      
+      // Filter out any entries where category filter returned null categories
+      const activeStreams = (data || []).filter((s) => {
+        if (!selectedCategory) return true;
+        return (s as any).categories?.slug === selectedCategory;
+      });
+
+      setStreams(activeStreams as unknown as Stream[]);
     } catch (err: any) {
-      console.error('Error fetching stream directory:', err);
-      setError(err.message || 'Could not load active streams');
+      console.error('Error fetching home streams:', err);
+      setError(err.message || 'Failed to load active broadcasts.');
     } finally {
       setLoading(false);
     }
@@ -128,6 +161,22 @@ export default function DirectoryPage() {
 
   useEffect(() => {
     fetchStreams();
+
+    // 🟢 Realtime Subscription: Update grid when a stream starts or ends on any device
+    const channel = supabase
+      .channel('public:streams')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'streams' },
+        () => {
+          fetchStreams();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [selectedCategory]);
 
   return (
@@ -227,7 +276,7 @@ export default function DirectoryPage() {
           </div>
         </div>
 
-        {/* 📱 🟢 Solo Stream Launch Banner (Clean Grid Position) */}
+        {/* 📱 🟢 Solo Stream Launch Banner */}
         <Link
           href={`/solo/${soloRoomName}?host=${userProfile?.username || 'Streamer'}`}
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gradient-to-r from-purple-900/40 via-slate-900 to-pink-900/40 border border-purple-500/30 rounded-2xl hover:border-purple-400 transition cursor-pointer gap-4 shadow-lg"
@@ -321,71 +370,81 @@ export default function DirectoryPage() {
         ) : (
           /* State D: Active Stream Card Grid */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {streams.map((stream) => (
-              <Link
-                key={stream.id}
-                href={`/watch/${stream.livekit_room_name}`}
-                className="group bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl overflow-hidden transition-all duration-200 flex flex-col shadow-lg hover:shadow-xl hover:-translate-y-0.5"
-              >
-                {/* Thumbnail / Stage Preview Box */}
-                <div className="w-full h-44 bg-gray-950 relative flex items-center justify-center border-b border-gray-800/80 group-hover:bg-gray-900 transition overflow-hidden">
-                  {stream.thumbnail_url ? (
-                    <img
-                      src={stream.thumbnail_url}
-                      alt={stream.title || 'Live Stream'}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    /* SVG Play Icon Fallback */
-                    <div className="text-gray-700 group-hover:text-cyan-400 group-hover:scale-110 transition duration-200">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        className="w-12 h-12"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
+            {streams.map((stream) => {
+              const isSoloStream = stream.livekit_room_name?.startsWith('solo_');
+              const targetHref = isSoloStream
+                ? `/solo/${stream.livekit_room_name}?host=${stream.profiles?.username || 'Streamer'}`
+                : `/watch/${stream.livekit_room_name}`;
+
+              return (
+                <Link
+                  key={stream.id}
+                  href={targetHref}
+                  className="group bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl overflow-hidden transition-all duration-200 flex flex-col shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                >
+                  {/* Thumbnail / Stage Preview Box */}
+                  <div className="w-full h-44 bg-gray-950 relative flex items-center justify-center border-b border-gray-800/80 group-hover:bg-gray-900 transition overflow-hidden">
+                    {stream.thumbnail_url ? (
+                      <img
+                        src={stream.thumbnail_url}
+                        alt={stream.title || 'Live Stream'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      /* SVG Play Icon Fallback */
+                      <div className="text-gray-700 group-hover:text-cyan-400 group-hover:scale-110 transition duration-200">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          className="w-12 h-12"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </div>
+                    )}
+
+                    <div className="absolute top-3 left-3 bg-red-600/90 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded flex items-center gap-1.5 shadow">
+                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                      LIVE
                     </div>
-                  )}
 
-                  <div className="absolute top-3 left-3 bg-red-600/90 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded flex items-center gap-1.5 shadow">
-                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
-                    LIVE
+                    <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur text-[10px] text-gray-300 font-mono px-2 py-0.5 rounded border border-white/10">
+                      {stream.categories?.name || 'General'}
+                    </div>
                   </div>
 
-                  <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur text-[10px] text-gray-300 font-mono px-2 py-0.5 rounded border border-white/10">
-                    {stream.categories?.name || 'General'}
-                  </div>
-                </div>
+                  {/* Card Meta Content */}
+                  <div className="p-4 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h2 className="font-bold text-sm text-white line-clamp-1 group-hover:text-red-400 transition">
+                        {stream.title}
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-1">
+                        @{stream.profiles?.username || 'Streamer'}
+                      </p>
+                    </div>
 
-                {/* Card Meta Content */}
-                <div className="p-4 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h2 className="font-bold text-sm text-white line-clamp-1 group-hover:text-red-400 transition">
-                      {stream.title}
-                    </h2>
+                    <div className="mt-4 pt-3 border-t border-gray-800/60 flex items-center justify-between text-[11px] text-gray-400">
+                      <span>
+                        Started{' '}
+                        {new Date(stream.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      <span className="text-red-400 group-hover:underline font-semibold">
+                        Watch Stream →
+                      </span>
+                    </div>
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-gray-800/60 flex items-center justify-between text-[11px] text-gray-400">
-                    <span>
-                      Started{' '}
-                      {new Date(stream.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    <span className="text-red-400 group-hover:underline font-semibold">
-                      Watch Stream →
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         )}
 
