@@ -44,6 +44,13 @@ export default function DirectoryPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 🟢 Fixed: Generated once on client to prevent SSR hydration mismatch
+  const [soloRoomName, setSoloRoomName] = useState<string>('solo_room');
+
+  useEffect(() => {
+    setSoloRoomName(`solo_${Math.floor(Math.random() * 10000)}`);
+  }, []);
+
   // 1. Auth listener & initial session loader
   useEffect(() => {
     async function checkSession() {
@@ -131,7 +138,7 @@ export default function DirectoryPage() {
           <span className="inline-block w-2 h-2 rounded-full bg-[#03fcad] animate-pulse" />
           <span className="text-gray-300">Welcome to the future of live streaming on</span>
 
-          {/* Brand Name with Google Exo & #03fcad */}
+          {/* Brand Name */}
           <span
             className="font-black tracking-wider uppercase text-base sm:text-lg drop-shadow-[0_0_12px_rgba(3,252,173,0.4)]"
             style={{ color: '#03fcad' }}
@@ -153,15 +160,15 @@ export default function DirectoryPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-          <Link
-            href="/wallet"
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-yellow-500/40 text-yellow-400 rounded-xl transition text-xs font-bold shadow-[0_0_10px_rgba(234,179,8,0.1)] hover:border-yellow-400 cursor-pointer"
-          >
-            <span>🪙</span>
-            <span>My Wallet</span>
-          </Link>
-          
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/wallet"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-yellow-500/40 text-yellow-400 rounded-xl transition text-xs font-bold shadow-[0_0_10px_rgba(234,179,8,0.1)] hover:border-yellow-400 cursor-pointer"
+            >
+              <span>🪙</span>
+              <span>My Wallet</span>
+            </Link>
+
             {/* User Profile / Handle Button */}
             <button
               onClick={() => {
@@ -171,15 +178,21 @@ export default function DirectoryPage() {
                   setProfileModalOpen(true);
                 }
               }}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg transition text-xs font-semibold text-gray-300"
+              className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg transition text-xs font-semibold text-gray-300 cursor-pointer"
             >
               {userProfile ? (
                 <>
-                  <img
-                    src={userProfile.avatarUrl}
-                    alt={userProfile.username}
-                    className="w-4 h-4 rounded-full bg-zinc-800"
-                  />
+                  {userProfile.avatarUrl ? (
+                    <img
+                      src={userProfile.avatarUrl}
+                      alt={userProfile.username}
+                      className="w-4 h-4 rounded-full bg-zinc-800 object-cover"
+                    />
+                  ) : (
+                    <span className="w-4 h-4 rounded-full bg-[#03fcad] text-slate-950 font-black text-[9px] flex items-center justify-center">
+                      {userProfile.username?.charAt(0).toUpperCase()}
+                    </span>
+                  )}
                   <span className="text-white">@{userProfile.username}</span>
                 </>
               ) : (
@@ -188,16 +201,18 @@ export default function DirectoryPage() {
             </button>
 
             {/* Sign Out Button */}
-            <button
-              onClick={() => supabase.auth.signOut()}
-              className="px-3 py-2 bg-zinc-900 hover:bg-red-950/50 hover:text-red-400 border border-zinc-800 rounded-lg transition text-xs text-zinc-400"
-            >
-              Sign Out
-            </button>
+            {currentUserId && (
+              <button
+                onClick={() => supabase.auth.signOut()}
+                className="px-3 py-2 bg-zinc-900 hover:bg-red-950/50 hover:text-red-400 border border-zinc-800 rounded-lg transition text-xs text-zinc-400 cursor-pointer"
+              >
+                Sign Out
+              </button>
+            )}
 
             <button
               onClick={fetchStreams}
-              className="px-3 py-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg text-xs font-semibold text-gray-300 transition"
+              className="px-3 py-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-lg text-xs font-semibold text-gray-300 transition cursor-pointer"
             >
               Refresh
             </button>
@@ -212,8 +227,34 @@ export default function DirectoryPage() {
           </div>
         </div>
 
+        {/* 📱 🟢 Solo Stream Launch Banner (Clean Grid Position) */}
+        <Link
+          href={`/solo/${soloRoomName}?host=${userProfile?.username || 'Streamer'}`}
+          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gradient-to-r from-purple-900/40 via-slate-900 to-pink-900/40 border border-purple-500/30 rounded-2xl hover:border-purple-400 transition cursor-pointer gap-4 shadow-lg"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-xl shrink-0">
+              📱
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                Start Solo Mobile Stream
+                <span className="bg-purple-500/20 text-purple-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-purple-500/30">
+                  NEW
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Full-screen 9:16 layout optimized for mobile streaming, live chat & gifts.
+              </p>
+            </div>
+          </div>
+          <span className="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-slate-950 font-black text-xs rounded-xl transition whitespace-nowrap self-end sm:self-center">
+            Go Solo →
+          </span>
+        </Link>
+
         {/* Category Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
           {[
             { name: 'All Categories', slug: '' },
             { name: 'Tech', slug: 'tech' },
@@ -224,10 +265,11 @@ export default function DirectoryPage() {
             <button
               key={cat.slug}
               onClick={() => setSelectedCategory(cat.slug)}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition ${selectedCategory === cat.slug
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                selectedCategory === cat.slug
                   ? 'bg-white text-black font-bold'
                   : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white border border-gray-800'
-                }`}
+              }`}
             >
               {cat.name}
             </button>
