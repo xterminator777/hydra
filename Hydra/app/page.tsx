@@ -277,7 +277,6 @@ export default function DirectoryPage() {
         </div>
 
         {/* 📱 🟢 Solo Stream Launch Banner */}
-        {/* 📱 🟢 Solo Stream Launch Banner */}
         <Link
           href={`/solo/${soloRoomName}?host=${userProfile?.username || 'Streamer'}&isHost=true`}
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gradient-to-r from-purple-900/40 via-slate-900 to-pink-900/40 border border-purple-500/30 rounded-2xl hover:border-purple-400 transition cursor-pointer gap-4 shadow-lg"
@@ -315,10 +314,11 @@ export default function DirectoryPage() {
             <button
               key={cat.slug}
               onClick={() => setSelectedCategory(cat.slug)}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer ${selectedCategory === cat.slug
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                selectedCategory === cat.slug
                   ? 'bg-white text-black font-bold'
                   : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white border border-gray-800'
-                }`}
+              }`}
             >
               {cat.name}
             </button>
@@ -372,8 +372,15 @@ export default function DirectoryPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {streams.map((stream) => {
               const isSoloStream = stream.livekit_room_name?.startsWith('solo_');
+              
+              // 🟢 Smart Fallback: Check profile username -> stream title -> fallback string
+              const hostHandle =
+                stream.profiles?.username ||
+                (stream.title ? stream.title.split("'s")[0] : null) ||
+                'Streamer';
+
               const targetHref = isSoloStream
-                ? `/solo/${stream.livekit_room_name}?host=${stream.profiles?.username || 'Streamer'}`
+                ? `/solo/${stream.livekit_room_name}?host=${encodeURIComponent(hostHandle)}`
                 : `/watch/${stream.livekit_room_name}`;
 
               return (
@@ -425,7 +432,7 @@ export default function DirectoryPage() {
                         {stream.title}
                       </h2>
                       <p className="text-xs text-slate-400 mt-1">
-                        @{stream.profiles?.username || 'Streamer'}
+                        @{hostHandle}
                       </p>
                     </div>
 

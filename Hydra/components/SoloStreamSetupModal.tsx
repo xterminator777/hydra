@@ -21,8 +21,11 @@ export default function SoloStreamSetupModal({
   onStreamStarted,
 }: SoloStreamSetupModalProps) {
   const [title, setTitle] = useState(`${username}'s Solo Stream`);
-  // 🟢 State variable defined here
-  const [thumbnailBase64, setThumbnailBase64] = useState<string | null>(null);
+  
+  // 🟢 Store actual file & local URL for preview (No Base64)
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
   const [category, setCategory] = useState('general');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +46,15 @@ export default function SoloStreamSetupModal({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setThumbnailBase64(reader.result as string);
-      setError(null);
-    };
-    reader.readAsDataURL(file);
+    setThumbnailFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setError(null);
+  };
+
+  const handleRemoveImage = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setThumbnailFile(null);
+    setPreviewUrl(null);
   };
 
   const handleStartStream = async (e: React.FormEvent) => {
@@ -64,20 +70,49 @@ export default function SoloStreamSetupModal({
     setError(null);
 
     try {
+      let finalPublicUrl: string | null = null;
+
+      // 🟢 1. Upload File directly to Supabase Storage if selected
+      if (thumbnailFile) {
+        const fileExt = thumbnailFile.name.split('.').pop() || 'jpg';
+        const fileName = `thumb_${roomName}_${Date.now()}.${fileExt}`;
+        const filePath = `solo/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('stream-thumbnails') // Replace with your exact bucket name if different
+          .upload(filePath, thumbnailFile, {
+            contentType: thumbnailFile.type,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          throw new Error(`Thumbnail upload failed: ${uploadError.message}`);
+        }
+
+        // Get public HTTPS URL
+        const { data: publicUrlData } = supabase.storage
+          .from('stream-thumbnails')
+          .getPublicUrl(filePath);
+
+        finalPublicUrl = publicUrlData.publicUrl;
+      }
+
+      // 🟢 2. Fetch Category ID
       const { data: categoryData } = await supabase
         .from('categories')
         .select('id')
         .eq('slug', category)
         .maybeSingle();
 
+      // 🟢 3. Save stream record with clean public HTTPS URL
       const { error: insertError } = await supabase
         .from('streams')
         .upsert(
           {
-            user_id: userId, // 🟢 Always a valid authenticated UUID
+            user_id: userId,
             title: title.trim() || `${username}'s Live`,
             livekit_room_name: roomName,
-            thumbnail_url: thumbnailBase64 || null,
+            thumbnail_url: finalPublicUrl,
             category_id: categoryData?.id || null,
             is_live: true,
           },
@@ -146,19 +181,19 @@ export default function SoloStreamSetupModal({
           </div>
 
           {/* Device Image Preview */}
-          {thumbnailBase64 && (
+          {previewUrl && (
             <div className="space-y-1">
               <span className="text-[10px] text-slate-400 font-bold">Preview:</span>
               <div className="w-full h-36 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden relative">
                 <img
-                  src={thumbnailBase64}
+                  src={previewUrl}
                   alt="Thumbnail Preview"
                   className="w-full h-full object-cover"
                 />
                 <button
                   type="button"
-                  onClick={() => setThumbnailBase64(null)}
-                  className="absolute top-2 right-2 bg-black/70 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center hover:bg-red-600 transition"
+                  onClick={handleRemoveImage}
+                  className="absolute top-2 right-2 bg-black/70 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center hover:bg-red-600 transition cursor-pointer"
                 >
                   ✕
                 </button>

@@ -10,20 +10,19 @@ export default function SoloStreamPage() {
   const searchParams = useSearchParams();
 
   const roomName = (params?.roomName as string) || 'solo_room';
-  const hostName = searchParams?.get('host') || 'Host';
-  
-  // 🟢 Explicit check: ONLY the "Start Solo Mobile Stream" banner link includes ?isHost=true
+  const urlHostParam = searchParams?.get('host') || 'Streamer';
   const explicitHostParam = searchParams?.get('isHost') === 'true';
 
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>('guest_viewer');
+  const [hostName, setHostName] = useState<string>(urlHostParam);
   const [isHost, setIsHost] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function initSession() {
       try {
-        // 1. Fetch current logged-in user session
+        // 1. Get logged-in user session
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -33,24 +32,36 @@ export default function SoloStreamPage() {
           setCurrentUserId(activeUserId);
         }
 
-        // 2. Fetch the stream record from Supabase
+        // 2. Fetch stream record + creator profile from Supabase
         const { data: streamRecord } = await supabase
           .from('streams')
-          .select('user_id')
+          .select(`
+            user_id,
+            profiles (
+              username
+            )
+          `)
           .eq('livekit_room_name', roomName)
           .maybeSingle();
 
         if (streamRecord) {
-          // 🔒 STREAM EXISTS IN DB:
-          // You are ONLY the host if your active Supabase auth UUID matches streamRecord.user_id
+          // Verify if current user is true owner
           setIsHost(Boolean(activeUserId && streamRecord.user_id === activeUserId));
+
+          // Set the true streamer's username from DB if available
+          const dbUsername = (streamRecord.profiles as any)?.username;
+          if (dbUsername) {
+            setHostName(dbUsername);
+          }
         } else {
-          // 🔒 STREAM NOT IN DB YET:
-          // You are ONLY the host if you clicked "Go Solo" (?isHost=true in URL)
+          // If not in DB yet, fallback to URL params
           setIsHost(explicitHostParam);
+          if (urlHostParam && urlHostParam !== 'Streamer') {
+            setHostName(urlHostParam);
+          }
         }
 
-        // 3. Fetch LiveKit connection token for LiveKit WebRTC engine
+        // 3. Request LiveKit token
         const participantName =
           session?.user?.email?.split('@')[0] ||
           `viewer_${Math.floor(Math.random() * 1000)}`;
@@ -76,7 +87,7 @@ export default function SoloStreamPage() {
     }
 
     initSession();
-  }, [roomName, hostName, explicitHostParam]);
+  }, [roomName, urlHostParam, explicitHostParam]);
 
   if (loading) {
     return (
