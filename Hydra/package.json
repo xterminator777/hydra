@@ -18,6 +18,7 @@
     "@livekit/components-styles": "1.2.0",
     "@livekit/krisp-noise-filter": "0.4.3",
     "@livekit/track-processors": "^0.7.0",
+    "@stripe/stripe-js": "^9.13.0",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",
     "@vercel/analytics": "^2.0.1",
@@ -27,6 +28,7 @@
     "next": "15.5.16",
     "react-dom": "18.3.1",
     "react-hot-toast": "^2.5.2",
+    "stripe": "^22.4.0",
     "tinykeys": "^3.0.0"
   },
   "devDependencies": {

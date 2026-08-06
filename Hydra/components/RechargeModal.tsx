@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 
 interface RechargeModalProps {
   isOpen: boolean;
@@ -11,49 +10,51 @@ interface RechargeModalProps {
 }
 
 const PACKAGES = [
-  { coins: 100, price: '$0.99', popular: false },
-  { coins: 500, price: '$4.99', popular: true },
-  { coins: 1200, price: '$9.99', popular: false },
-  { coins: 3000, price: '$24.99', popular: false },
+  { coins: 100, price: '$0.99', priceInCents: 99, popular: false },
+  { coins: 500, price: '$4.99', priceInCents: 499, popular: true },
+  { coins: 1200, price: '$9.99', priceInCents: 999, popular: false },
+  { coins: 3000, price: '$24.99', priceInCents: 2499, popular: false },
 ];
 
-export function RechargeModal({ isOpen, onClose, userId, onBalanceUpdated }: RechargeModalProps) {
+export function RechargeModal({
+  isOpen,
+  onClose,
+  userId,
+  onBalanceUpdated,
+}: RechargeModalProps) {
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  // Demo purchase handler (Simulates buying coins)
-  const handleBuyCoins = async (coinsToAdd: number) => {
+  // Initiates Stripe Checkout Session
+  const handleBuyCoins = async (coinsAmount: number, priceInCents: number) => {
     setLoading(true);
-  try {
-    // 🟢 Call our server API route to bypass client-side RLS restriction
-    const response = await fetch('/api/coins/recharge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        coinsToAdd,
-      }),
-    });
+    try {
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          coinsAmount,
+          priceInCents,
+        }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      alert(`Recharge failed: ${data.error}`);
-      return;
+      if (data.url) {
+        // Redirect user directly to Stripe's hosted checkout page
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Failed to initiate payment session.');
+      }
+    } catch (err) {
+      console.error('Error starting checkout:', err);
+      alert('Failed to connect to checkout service.');
+    } finally {
+      setLoading(false);
     }
-
-    // Update parent state with the confirmed database balance
-    onBalanceUpdated(data.newBalance);
-    alert(`🎉 Success! Added ${coinsToAdd} coins to your balance.`);
-    onClose();
-  } catch (err) {
-    console.error('Error adding coins:', err);
-    alert('Failed to complete purchase.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -62,7 +63,10 @@ export function RechargeModal({ isOpen, onClose, userId, onBalanceUpdated }: Rec
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             🪙 Top Up Coins
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-sm">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white text-sm cursor-pointer"
+          >
             ✕
           </button>
         </div>
@@ -76,8 +80,8 @@ export function RechargeModal({ isOpen, onClose, userId, onBalanceUpdated }: Rec
             <button
               key={pkg.coins}
               disabled={loading}
-              onClick={() => handleBuyCoins(pkg.coins)}
-              className="relative bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-[#03fcad] rounded-xl p-3 flex flex-col items-center justify-center gap-1 transition group cursor-pointer"
+              onClick={() => handleBuyCoins(pkg.coins, pkg.priceInCents)}
+              className="relative bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-[#03fcad] rounded-xl p-3 flex flex-col items-center justify-center gap-1 transition group cursor-pointer disabled:opacity-50"
             >
               {pkg.popular && (
                 <span className="absolute -top-2 bg-[#03fcad] text-slate-950 font-black text-[8px] uppercase px-1.5 py-0.5 rounded-full">
@@ -95,7 +99,7 @@ export function RechargeModal({ isOpen, onClose, userId, onBalanceUpdated }: Rec
         </div>
 
         <p className="text-[10px] text-slate-500 text-center font-mono">
-          🔒 Test Mode Active: Purchases are instant and free.
+          🔒 Secured by Stripe Payments
         </p>
       </div>
     </div>
