@@ -9,7 +9,7 @@ import {
     useRemoteParticipants,
     useLocalParticipant,
     useRoomContext,
-    useChat, // 🟢 LiveKit Chat Hook
+    useChat,
 } from '@livekit/components-react';
 import { Track, RoomEvent, ConnectionState } from 'livekit-client';
 import SoloStreamSetupModal from '@/components/SoloStreamSetupModal';
@@ -39,7 +39,7 @@ export function SoloWatchRoom({
             video={false}
             audio={false}
             data-lk-theme="default"
-            className="relative w-screen h-screen bg-black overflow-hidden font-sans select-none flex items-center justify-center"
+            className="relative w-full h-[100dvh] bg-black overflow-hidden font-sans select-none flex items-center justify-center"
         >
             <SoloStreamStage
                 hostName={hostName}
@@ -66,7 +66,6 @@ function SoloStreamStage({
     const room = useRoomContext();
     const router = useRouter();
 
-    // 🟢 LiveKit official chat hook
     const { chatMessages, send } = useChat();
 
     const tracks = useTracks([
@@ -101,7 +100,6 @@ function SoloStreamStage({
         };
     }, [isHost, roomName]);
 
-    // End Stream handler
     const handleEndStream = async (e?: React.MouseEvent) => {
         if (e) e.preventDefault();
 
@@ -131,14 +129,12 @@ function SoloStreamStage({
         router.push('/');
     };
 
-    // Auto-publish ONLY if verified host
     useEffect(() => {
         if (isHost && isConnected && localParticipant && !isCameraEnabled && !setupModalOpen) {
             handleEnableMedia();
         }
     }, [isConnected, localParticipant, setupModalOpen, isHost]);
 
-    // Track engine connection state
     useEffect(() => {
         if (!room) return;
 
@@ -180,7 +176,6 @@ function SoloStreamStage({
         }
     };
 
-    // 🟢 1. CHAT SENDER
     const handleSendChat = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!chatInput.trim()) return;
@@ -189,14 +184,12 @@ function SoloStreamStage({
         setChatInput('');
 
         try {
-            // LiveKit handle sends plain text or JSON payload across room
             await send(msg);
         } catch (err) {
             console.error('Error sending LiveKit chat:', err);
         }
     };
 
-    // 🟢 2. GIFT SENDER (Broadcasting gift JSON string through useChat)
     const handleSendGift = async (icon: string, coinCost: number) => {
         const giftId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const senderName = localParticipant?.identity?.replace(/^host_/, '') || (isHost ? hostName : 'Viewer');
@@ -218,7 +211,6 @@ function SoloStreamStage({
         }
     };
 
-    // 🟢 3. LISTEN FOR INCOMING GIFTS
     useEffect(() => {
         if (chatMessages.length === 0) return;
         const latestMsg = chatMessages[chatMessages.length - 1];
@@ -238,7 +230,6 @@ function SoloStreamStage({
         }
     }, [chatMessages]);
 
-    // 🟢 4. SEPARATE CHAT MESSAGES FROM GIFT PAYLOADS
     const textChatMessages = chatMessages.filter((msg) => {
         try {
             const parsed = JSON.parse(msg.message);
@@ -251,13 +242,15 @@ function SoloStreamStage({
     const hasVideoTrack = cameraTrack && cameraTrack.publication && !cameraTrack.publication.isMuted;
 
     return (
-        /* 📱 DESKTOP MOBILE FRAME CONTAINER */
-        <div className="relative w-full max-w-[420px] h-full sm:h-[90vh] bg-black sm:rounded-3xl border border-zinc-800/80 shadow-2xl overflow-hidden flex flex-col justify-between mx-auto">
-            {/* 1. VIDEO BACKGROUND */}
+        /* 📱 RESPONSIVE STAGE WRAPPER */
+        <div className="relative w-full sm:max-w-[420px] h-[100dvh] sm:h-[90vh] bg-black sm:rounded-3xl border-0 sm:border border-zinc-800/80 shadow-2xl overflow-hidden flex flex-col justify-between mx-auto">
+            
+            {/* 1. FULL UNCROPPED VIDEO FEED */}
             <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
                 {hasVideoTrack ? (
                     <VideoTrack
                         trackRef={cameraTrack}
+                        /* 🟢 object-contain displays 100% of the camera frame with zero cropping */
                         className="w-full h-full object-contain max-h-full max-w-full"
                     />
                 ) : (
@@ -291,9 +284,9 @@ function SoloStreamStage({
                 )}
             </div>
 
-            {/* 2. TOP FLOATING HEADER OVERLAY */}
-            <div className="relative z-10 p-3 pt-4 sm:p-4 sm:pt-6 flex items-center justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent">
-                <div className="flex items-center gap-2 bg-black/50 backdrop-blur-md p-1 pr-3 rounded-full border border-white/10">
+            {/* 2. TOP FLOATING HEADER OVERLAY (pt-12 prevents iPhone notch cropping) */}
+            <div className="relative z-10 p-4 pt-12 sm:pt-6 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent">
+                <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md p-1 pr-3 rounded-full border border-white/10">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#03fcad] text-slate-950 font-black flex items-center justify-center text-xs sm:text-sm">
                         {hostName.charAt(0).toUpperCase()}
                     </div>
@@ -306,7 +299,7 @@ function SoloStreamStage({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <div className="bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] sm:text-[11px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
+                    <div className="bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] sm:text-[11px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
                         <span
                             className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-red-500 animate-pulse' : 'bg-amber-400'
                                 }`}
@@ -317,7 +310,7 @@ function SoloStreamStage({
                     <button
                         type="button"
                         onClick={handleEndStream}
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white text-xs hover:bg-red-600 transition cursor-pointer"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white text-xs hover:bg-red-600 transition cursor-pointer"
                     >
                         ✕
                     </button>
@@ -336,14 +329,14 @@ function SoloStreamStage({
                 ))}
             </div>
 
-            {/* 4. BOTTOM CHAT & GIFT CONTROLS */}
-            <div className="relative z-10 p-3 pb-4 sm:p-4 sm:pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
-                <div className="h-[130px] overflow-y-auto flex flex-col-reverse gap-1.5 pr-2 no-scrollbar">
+            {/* 4. BOTTOM CHAT & GIFT CONTROLS (pb-20 elevates UI above browser toolbar) */}
+            <div className="relative z-10 p-4 pb-20 sm:pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
+                <div className="h-[110px] sm:h-[130px] overflow-y-auto flex flex-col-reverse gap-1.5 pr-2 no-scrollbar">
                     <div className="flex flex-col items-start gap-1.5">
                         {textChatMessages.map((msg, idx) => (
                             <div
                                 key={idx}
-                                className="bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm"
+                                className="bg-black/60 backdrop-blur-md border border-white/10 rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm"
                             >
                                 <span className="font-bold text-[#03fcad] mr-1.5">
                                     {msg.from?.identity ? msg.from.identity.replace(/^host_/, '') : 'Viewer'}:
@@ -361,7 +354,7 @@ function SoloStreamStage({
                             placeholder="Send message..."
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
-                            className="w-full bg-black/60 border border-white/20 rounded-full px-3.5 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#03fcad] backdrop-blur-md"
+                            className="w-full bg-black/60 border border-white/20 rounded-full px-3.5 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#03fcad] backdrop-blur-md"
                         />
                     </form>
 
@@ -378,7 +371,7 @@ function SoloStreamStage({
             {/* 5. GIFT MODAL SHEET */}
             {showGiftModal && (
                 <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-end justify-center p-2 sm:p-0">
-                    <div className="bg-slate-900 border-t border-slate-800 rounded-2xl sm:rounded-t-3xl p-4 sm:p-5 w-full max-w-md text-white space-y-3">
+                    <div className="bg-slate-900 border-t border-slate-800 rounded-2xl sm:rounded-t-3xl p-4 sm:p-5 w-full max-w-md text-white space-y-3 mb-16 sm:mb-0">
                         <div className="flex items-center justify-between">
                             <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
                                 <span>🎁</span> Send Gift to {hostName}
