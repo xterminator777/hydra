@@ -12,6 +12,7 @@ import {
 } from '@livekit/components-react';
 import { Track, RoomEvent, ConnectionState } from 'livekit-client';
 import Link from 'next/link';
+import SoloStreamSetupModal from '@/components/SoloStreamSetupModal';
 
 interface SoloWatchRoomProps {
     roomName: string;
@@ -31,7 +32,7 @@ export function SoloWatchRoom({
             serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_WS_URL}
             token={token}
             connect={true}
-            // 🟢 Keep auto-publish disabled on mount to prevent the race condition
+            // Keep auto-publish disabled on mount to prevent the race condition
             video={false}
             audio={false}
             data-lk-theme="default"
@@ -61,6 +62,8 @@ function SoloStreamStage({
     const participants = useRemoteParticipants();
     const { localParticipant, isCameraEnabled } = useLocalParticipant();
 
+    // 🟢 Component state hooks
+    const [setupModalOpen, setSetupModalOpen] = useState(true);
     const [chatMessages, setChatMessages] = useState<{ id: string; user: string; text: string }[]>([]);
     const [chatInput, setChatInput] = useState('');
     const [sessionCoins, setSessionCoins] = useState(0);
@@ -112,12 +115,12 @@ function SoloStreamStage({
         }
     };
 
-    // 🟢 3. Auto-publish only AFTER the room fires the Connected event
+    // 🟢 3. Auto-publish only AFTER the room fires the Connected event & setup modal closes
     useEffect(() => {
-        if (isConnected && localParticipant && !isCameraEnabled) {
+        if (isConnected && localParticipant && !isCameraEnabled && !setupModalOpen) {
             handleEnableMedia();
         }
-    }, [isConnected, localParticipant]);
+    }, [isConnected, localParticipant, setupModalOpen]);
 
     const handleSendChat = (e: React.FormEvent) => {
         e.preventDefault();
@@ -243,7 +246,7 @@ function SoloStreamStage({
 
             {/* 4. BOTTOM CHAT & GIFT CONTROLS */}
             <div className="relative z-10 p-3 pb-4 sm:p-4 sm:pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
-                {/* 🟢 Scrollable Chat Feed (Shows ~4 messages by default, allows scroll up) */}
+                {/* Scrollable Chat Feed */}
                 <div className="h-[130px] overflow-y-auto flex flex-col-reverse gap-1.5 pr-2 no-scrollbar">
                     <div className="flex flex-col items-start gap-1.5">
                         {chatMessages.map((msg) => (
@@ -321,6 +324,19 @@ function SoloStreamStage({
                     </div>
                 </div>
             )}
+
+            {/* 6. SOLO STREAM SETUP MODAL */}
+            <SoloStreamSetupModal
+                isOpen={setupModalOpen}
+                onClose={() => setSetupModalOpen(false)}
+                roomName={roomName}
+                userId={currentUserId || 'guest_host'}
+                username={hostName}
+                onStreamStarted={() => {
+                    setSetupModalOpen(false);
+                    handleEnableMedia();
+                }}
+            />
         </div>
     );
 }

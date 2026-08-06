@@ -1,39 +1,66 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 import { SoloWatchRoom } from '@/components/SoloWatchRoom';
 
-interface SoloPageProps {
-  params: {
-    roomName: string;
-  };
-  searchParams: {
-    host?: string;
-  };
-}
+export default function SoloStreamPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
 
-export default async function SoloStreamPage({ params, searchParams }: SoloPageProps) {
-  const roomName = params.roomName;
-  const hostName = searchParams.host || 'Host';
+  const roomName = (params?.roomName as string) || 'solo_room';
+  const hostName = searchParams?.get('host') || 'Host';
 
-  // Fetch LiveKit join token for solo stream
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        roomName,
-        participantName: `viewer_${Math.floor(Math.random() * 1000)}`,
-      }),
-      cache: 'no-store',
+  const [token, setToken] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>('guest_host');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function initSession() {
+      try {
+        // 1. Get current authenticated user session from Supabase
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          setCurrentUserId(session.user.id);
+        }
+
+        // 2. Fetch LiveKit connection token
+        const res = await fetch('/api/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomName,
+            participantName: session?.user?.email?.split('@')[0] || hostName,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.token) {
+          setToken(data.token);
+        }
+      } catch (err) {
+        console.error('Error initializing stream page:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  );
 
-  const data = await res.json();
+    initSession();
+  }, [roomName, hostName]);
 
-  if (!data.token) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-950 text-white font-mono text-xs">
-        Failed to connect to Solo Stream session.
+      <div className="flex items-center justify-center h-screen bg-black text-slate-400 font-mono text-xs">
+        Loading stream session...
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-black text-red-400 font-mono text-xs">
+        Failed to get stream token.
       </div>
     );
   }
@@ -41,8 +68,9 @@ export default async function SoloStreamPage({ params, searchParams }: SoloPageP
   return (
     <SoloWatchRoom
       roomName={roomName}
-      token={data.token}
+      token={token}
       hostName={hostName}
+      currentUserId={currentUserId} // 🟢 Passes authentic UUID
     />
   );
 }
