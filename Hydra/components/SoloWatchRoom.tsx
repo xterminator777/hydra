@@ -38,7 +38,7 @@ export function SoloWatchRoom({
             video={false}
             audio={false}
             data-lk-theme="default"
-            className="relative w-full h-[100dvh] bg-black overflow-hidden font-sans select-none"
+            className="relative w-full h-[100dvh] bg-zinc-950 flex items-center justify-center font-sans select-none overflow-hidden"
         >
             <SoloStreamStage
                 hostName={hostName}
@@ -98,7 +98,7 @@ function SoloStreamStage({
         };
     }, [isHost, roomName]);
 
-    // 🟢 FIXED: End Stream handler waits for DB update before routing
+    // End Stream handler
     const handleEndStream = async (e?: React.MouseEvent) => {
         if (e) e.preventDefault();
 
@@ -218,13 +218,15 @@ function SoloStreamStage({
     const hasVideoTrack = cameraTrack && cameraTrack.publication && !cameraTrack.publication.isMuted;
 
     return (
-        <div className="relative w-full h-[100dvh] flex flex-col justify-between overflow-hidden">
+        /* 📱 DESKTOP MOBILE FRAME CONTAINER */
+        <div className="relative w-full max-w-[420px] h-full sm:h-[90vh] bg-black sm:rounded-3xl border border-zinc-800/80 shadow-2xl overflow-hidden flex flex-col justify-between mx-auto">
             {/* 1. VIDEO BACKGROUND */}
-            <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
+            <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
                 {hasVideoTrack ? (
                     <VideoTrack
                         trackRef={cameraTrack}
-                        className="w-full h-full object-cover"
+                        /* 🟢 object-contain ensures full 9:16 mobile frame fits without zooming/cropping */
+                        className="w-full h-full object-contain max-h-full max-w-full"
                     />
                 ) : (
                     <div className="flex flex-col items-center justify-center gap-3 text-center max-w-xs z-10 my-auto bg-slate-900/90 border border-white/10 p-5 rounded-2xl backdrop-blur-md shadow-2xl">
@@ -280,7 +282,6 @@ function SoloStreamStage({
                         {isConnected ? `${participants.length + 1} live` : 'Connecting'}
                     </div>
 
-                    {/* 🟢 FIXED: Pure Button avoids premature link navigation */}
                     <button
                         type="button"
                         onClick={handleEndStream}
