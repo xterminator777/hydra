@@ -28,19 +28,32 @@ export default function SoloStreamPage() {
                 } = await supabase.auth.getSession();
                 const activeUserId = session?.user?.id || null;
 
+                let myDisplayUsername: string | null = null;
+
                 if (activeUserId) {
                     setCurrentUserId(activeUserId);
+
+                    // 🟢 Fetch current user's profile username (amunRa)
+                    const { data: myProfile } = await supabase
+                        .from('profiles')
+                        .select('username')
+                        .eq('id', activeUserId)
+                        .maybeSingle();
+
+                    if (myProfile?.username) {
+                        myDisplayUsername = myProfile.username;
+                    }
                 }
 
                 // 2. Fetch stream record + creator profile from Supabase
                 const { data: streamRecord } = await supabase
                     .from('streams')
                     .select(`
-            user_id,
-            profiles (
-              username
-            )
-          `)
+                        user_id,
+                        profiles (
+                          username
+                        )
+                    `)
                     .eq('livekit_room_name', roomName)
                     .maybeSingle();
 
@@ -61,8 +74,9 @@ export default function SoloStreamPage() {
                     }
                 }
 
-                // 3. Request LiveKit token
+                // 🟢 3. Use profile username first, fallback to email prefix or random string
                 const participantName =
+                    myDisplayUsername ||
                     session?.user?.email?.split('@')[0] ||
                     `viewer_${Math.floor(Math.random() * 1000)}`;
 
@@ -72,6 +86,8 @@ export default function SoloStreamPage() {
                     body: JSON.stringify({
                         roomName,
                         participantName,
+                        userId: activeUserId, // Pass userId to token generator
+                        isHost: Boolean(activeUserId && streamRecord?.user_id === activeUserId),
                     }),
                 });
 
@@ -115,6 +131,5 @@ export default function SoloStreamPage() {
                 isHost={isHost}
             />
         </div>
-
     );
 }
