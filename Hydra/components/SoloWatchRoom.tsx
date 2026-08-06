@@ -11,8 +11,9 @@ import {
     useRoomContext,
 } from '@livekit/components-react';
 import { Track, RoomEvent, ConnectionState } from 'livekit-client';
-import Link from 'next/link';
 import SoloStreamSetupModal from '@/components/SoloStreamSetupModal';
+import { supabase } from '@/lib/supabaseClient';
+import { useRouter } from 'next/navigation';
 
 interface SoloWatchRoomProps {
     roomName: string;
@@ -34,7 +35,6 @@ export function SoloWatchRoom({
             serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_WS_URL}
             token={token}
             connect={true}
-            // Keep auto-publish disabled on mount to prevent the race condition
             video={false}
             audio={false}
             data-lk-theme="default"
@@ -63,6 +63,8 @@ function SoloStreamStage({
     isHost?: boolean;
 }) {
     const room = useRoomContext();
+    const router = useRouter();
+
     const tracks = useTracks([
         { source: Track.Source.Camera, withPlaceholder: true },
         { source: Track.Source.ScreenShare, withPlaceholder: false },
@@ -72,9 +74,6 @@ function SoloStreamStage({
     const { localParticipant, isCameraEnabled } = useLocalParticipant();
 
     const [setupModalOpen, setSetupModalOpen] = useState(isHost);
-
-    // 🟢 Component state hooks
-
     const [chatMessages, setChatMessages] = useState<{ id: string; user: string; text: string }[]>([]);
     const [chatInput, setChatInput] = useState('');
     const [sessionCoins, setSessionCoins] = useState(0);
@@ -83,14 +82,62 @@ function SoloStreamStage({
     const [publishing, setPublishing] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
 
-    // 🟢 Auto-publish ONLY if the user is verified as the HOST
     useEffect(() => {
-        // 🟢 STRICT GUARD: ONLY enable camera/mic if this user is explicitly verified as the HOST
+        if (!isHost) return;
+
+        const handleUnload = () => {
+            navigator.sendBeacon(
+                `/api/end-stream`,
+                JSON.stringify({ roomName })
+            );
+        };
+
+        window.addEventListener('beforeunload', handleUnload);
+        return () => {
+            window.removeEventListener('beforeunload', handleUnload);
+        };
+    }, [isHost, roomName]);
+
+    // 🟢 FIXED: End Stream handler waits for DB update before routing
+    const handleEndStream = async (e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
+
+        if (isHost) {
+            try {
+                console.log(`Ending stream for room: ${roomName}...`);
+                const { data, error } = await supabase
+                    .from('streams')
+                    .update({ is_live: false })
+                    .eq('livekit_room_name', roomName)
+                    .select();
+
+                if (error) {
+                    console.error('Supabase update error:', error.message);
+                } else {
+                    console.log('Stream successfully marked inactive in DB:', data);
+                }
+            } catch (err) {
+                console.error('Failed to end stream in database:', err);
+            }
+        }
+
+        // Leave LiveKit session
+        if (room) {
+            await room.disconnect();
+        }
+
+        // Navigate back to Homepage
+        router.push('/');
+    };
+
+    // Auto-publish ONLY if verified host
+    useEffect(() => {
         if (isHost && isConnected && localParticipant && !isCameraEnabled && !setupModalOpen) {
             handleEnableMedia();
         }
     }, [isConnected, localParticipant, setupModalOpen, isHost]);
-    // 🟢 1. Track engine connection state
+
+    // Track engine connection state
     useEffect(() => {
         if (!room) return;
 
@@ -111,11 +158,10 @@ function SoloStreamStage({
         };
     }, [room]);
 
-    // 🟢 Find the video track of the STREAM HOST (not the local MacBook viewer)
     const cameraTrack = tracks.find(
         (t) => t.source === Track.Source.Camera && (!t.participant.isLocal || isHost)
     ) || tracks[0];
-    // 🟢 2. Safe publish function: checks if engine is connected first
+
     const handleEnableMedia = async () => {
         if (!localParticipant || !room || room.state !== ConnectionState.Connected) {
             console.warn('Cannot publish: LiveKit engine is not connected yet.');
@@ -132,13 +178,6 @@ function SoloStreamStage({
             setPublishing(false);
         }
     };
-
-    // 🟢 3. Auto-publish only AFTER the room fires the Connected event & setup modal closes
-    useEffect(() => {
-        if (isConnected && localParticipant && !isCameraEnabled && !setupModalOpen) {
-            handleEnableMedia();
-        }
-    }, [isConnected, localParticipant, setupModalOpen]);
 
     const handleSendChat = (e: React.FormEvent) => {
         e.preventDefault();
@@ -180,7 +219,7 @@ function SoloStreamStage({
 
     return (
         <div className="relative w-full h-[100dvh] flex flex-col justify-between overflow-hidden">
-            {/* 1. FULL-SCREEN 9:16 VIDEO BACKGROUND (Edge-to-Edge) */}
+            {/* 1. VIDEO BACKGROUND */}
             <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
                 {hasVideoTrack ? (
                     <VideoTrack
@@ -241,16 +280,18 @@ function SoloStreamStage({
                         {isConnected ? `${participants.length + 1} live` : 'Connecting'}
                     </div>
 
-                    <Link
-                        href="/"
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white text-xs hover:bg-white/20 transition"
+                    {/* 🟢 FIXED: Pure Button avoids premature link navigation */}
+                    <button
+                        type="button"
+                        onClick={handleEndStream}
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-white text-xs hover:bg-red-600 transition cursor-pointer"
                     >
                         ✕
-                    </Link>
+                    </button>
                 </div>
             </div>
 
-            {/* 3. FLOATING GIFT ANIMATIONS LAYER */}
+            {/* 3. FLOATING GIFT ANIMATIONS */}
             <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
                 {floatingGifts.map((gift) => (
                     <div
@@ -264,7 +305,6 @@ function SoloStreamStage({
 
             {/* 4. BOTTOM CHAT & GIFT CONTROLS */}
             <div className="relative z-10 p-3 pb-4 sm:p-4 sm:pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
-                {/* Scrollable Chat Feed */}
                 <div className="h-[130px] overflow-y-auto flex flex-col-reverse gap-1.5 pr-2 no-scrollbar">
                     <div className="flex flex-col items-start gap-1.5">
                         {chatMessages.map((msg) => (
@@ -281,7 +321,6 @@ function SoloStreamStage({
                     </div>
                 </div>
 
-                {/* Input Bar & Controls */}
                 <div className="flex items-center gap-2">
                     <form onSubmit={handleSendChat} className="flex-1">
                         <input
@@ -343,7 +382,7 @@ function SoloStreamStage({
                 </div>
             )}
 
-            {/* 6. SOLO STREAM SETUP MODAL */}
+            {/* 6. SETUP MODAL */}
             <SoloStreamSetupModal
                 isOpen={setupModalOpen}
                 onClose={() => setSetupModalOpen(false)}
