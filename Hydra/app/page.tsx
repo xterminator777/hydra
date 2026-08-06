@@ -152,7 +152,7 @@ export default function DirectoryPage() {
               Discover active broadcasts across technology, gaming, music, and more.
             </p>
           </div>
-          
+
           <div className="flex items-center gap-3">
           <Link
             href="/wallet"
@@ -183,7 +183,7 @@ export default function DirectoryPage() {
                   <span className="text-white">@{userProfile.username}</span>
                 </>
               ) : (
-                <span>👤 Setup Profile</span>
+                <span>Log In</span>
               )}
             </button>
 
