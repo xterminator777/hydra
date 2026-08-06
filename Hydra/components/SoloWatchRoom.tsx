@@ -85,6 +85,7 @@ function SoloStreamStage({
 
     // 🟢 Auto-publish ONLY if the user is verified as the HOST
     useEffect(() => {
+        // 🟢 STRICT GUARD: ONLY enable camera/mic if this user is explicitly verified as the HOST
         if (isHost && isConnected && localParticipant && !isCameraEnabled && !setupModalOpen) {
             handleEnableMedia();
         }
@@ -110,10 +111,10 @@ function SoloStreamStage({
         };
     }, [room]);
 
+    // 🟢 Find the video track of the STREAM HOST (not the local MacBook viewer)
     const cameraTrack = tracks.find(
-        (t) => t.source === Track.Source.Camera && (t.participant.isLocal || t.participant.identity === hostName)
+        (t) => t.source === Track.Source.Camera && (!t.participant.isLocal || isHost)
     ) || tracks[0];
-
     // 🟢 2. Safe publish function: checks if engine is connected first
     const handleEnableMedia = async () => {
         if (!localParticipant || !room || room.state !== ConnectionState.Connected) {

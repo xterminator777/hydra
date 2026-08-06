@@ -11,6 +11,8 @@ export default function SoloStreamPage() {
 
   const roomName = (params?.roomName as string) || 'solo_room';
   const hostName = searchParams?.get('host') || 'Host';
+  
+  // 🟢 Explicit check: ONLY the "Start Solo Mobile Stream" banner link includes ?isHost=true
   const explicitHostParam = searchParams?.get('isHost') === 'true';
 
   const [token, setToken] = useState<string | null>(null);
@@ -18,15 +20,10 @@ export default function SoloStreamPage() {
   const [isHost, setIsHost] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
-
-
-
   useEffect(() => {
     async function initSession() {
       try {
-
-        
-        // 1. Get logged-in user session
+        // 1. Fetch current logged-in user session
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -36,22 +33,24 @@ export default function SoloStreamPage() {
           setCurrentUserId(activeUserId);
         }
 
-        // 2. Fetch stream record from Supabase to check the TRUE stream owner
+        // 2. Fetch the stream record from Supabase
         const { data: streamRecord } = await supabase
           .from('streams')
           .select('user_id')
           .eq('livekit_room_name', roomName)
           .maybeSingle();
 
-        if (streamRecord && activeUserId) {
-          // Stream exists in DB: You are ONLY the host if your auth ID matches stream.user_id
-          setIsHost(streamRecord.user_id === activeUserId);
+        if (streamRecord) {
+          // 🔒 STREAM EXISTS IN DB:
+          // You are ONLY the host if your active Supabase auth UUID matches streamRecord.user_id
+          setIsHost(Boolean(activeUserId && streamRecord.user_id === activeUserId));
         } else {
-          // If no stream in DB yet, strictly check if user navigated from "Go Solo" button
+          // 🔒 STREAM NOT IN DB YET:
+          // You are ONLY the host if you clicked "Go Solo" (?isHost=true in URL)
           setIsHost(explicitHostParam);
         }
 
-        // 3. Fetch LiveKit connection token as participant
+        // 3. Fetch LiveKit connection token for LiveKit WebRTC engine
         const participantName =
           session?.user?.email?.split('@')[0] ||
           `viewer_${Math.floor(Math.random() * 1000)}`;
@@ -94,8 +93,6 @@ export default function SoloStreamPage() {
       </div>
     );
   }
-
-  
 
   return (
     <SoloWatchRoom

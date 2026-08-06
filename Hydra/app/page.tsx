@@ -143,7 +143,7 @@ export default function DirectoryPage() {
       const { data, error: queryError } = await query;
 
       if (queryError) throw queryError;
-      
+
       // Filter out any entries where category filter returned null categories
       const activeStreams = (data || []).filter((s) => {
         if (!selectedCategory) return true;
@@ -277,6 +277,7 @@ export default function DirectoryPage() {
         </div>
 
         {/* 📱 🟢 Solo Stream Launch Banner */}
+        {/* 📱 🟢 Solo Stream Launch Banner */}
         <Link
           href={`/solo/${soloRoomName}?host=${userProfile?.username || 'Streamer'}&isHost=true`}
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gradient-to-r from-purple-900/40 via-slate-900 to-pink-900/40 border border-purple-500/30 rounded-2xl hover:border-purple-400 transition cursor-pointer gap-4 shadow-lg"
@@ -314,11 +315,10 @@ export default function DirectoryPage() {
             <button
               key={cat.slug}
               onClick={() => setSelectedCategory(cat.slug)}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                selectedCategory === cat.slug
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer ${selectedCategory === cat.slug
                   ? 'bg-white text-black font-bold'
                   : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white border border-gray-800'
-              }`}
+                }`}
             >
               {cat.name}
             </button>
