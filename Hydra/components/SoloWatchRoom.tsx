@@ -202,6 +202,7 @@ function SoloStreamStage({
             icon,
             coinCost,
             sender: senderName,
+            displayText: `${senderName} sent a gift! ${icon}`,
         });
 
         try {
@@ -211,6 +212,7 @@ function SoloStreamStage({
         }
     };
 
+    // 🟢 LISTEN FOR INCOMING GIFTS & TRIGGER FLOATING ANIMATION / COINS
     useEffect(() => {
         if (chatMessages.length === 0) return;
         const latestMsg = chatMessages[chatMessages.length - 1];
@@ -218,7 +220,10 @@ function SoloStreamStage({
         try {
             const parsed = JSON.parse(latestMsg.message);
             if (parsed.isGift) {
+                // Update session coin counter
                 setSessionCoins((prev) => prev + parsed.coinCost);
+
+                // Trigger floating gift animation
                 setFloatingGifts((prev) => [...prev, { id: parsed.giftId, icon: parsed.icon }]);
 
                 setTimeout(() => {
@@ -230,27 +235,17 @@ function SoloStreamStage({
         }
     }, [chatMessages]);
 
-    const textChatMessages = chatMessages.filter((msg) => {
-        try {
-            const parsed = JSON.parse(msg.message);
-            return !parsed.isGift;
-        } catch {
-            return true;
-        }
-    });
-
     const hasVideoTrack = cameraTrack && cameraTrack.publication && !cameraTrack.publication.isMuted;
 
     return (
         /* 📱 RESPONSIVE STAGE WRAPPER */
         <div className="relative w-full sm:max-w-[420px] h-[100dvh] sm:h-[90vh] bg-black sm:rounded-3xl border-0 sm:border border-zinc-800/80 shadow-2xl overflow-hidden flex flex-col justify-between mx-auto">
-            
+
             {/* 1. FULL UNCROPPED VIDEO FEED */}
             <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
                 {hasVideoTrack ? (
                     <VideoTrack
                         trackRef={cameraTrack}
-                        /* 🟢 object-contain displays 100% of the camera frame with zero cropping */
                         className="w-full h-full object-contain max-h-full max-w-full"
                     />
                 ) : (
@@ -284,7 +279,7 @@ function SoloStreamStage({
                 )}
             </div>
 
-            {/* 2. TOP FLOATING HEADER OVERLAY (pt-12 prevents iPhone notch cropping) */}
+            {/* 2. TOP FLOATING HEADER OVERLAY */}
             <div className="relative z-10 p-4 pt-12 sm:pt-6 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent">
                 <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md p-1 pr-3 rounded-full border border-white/10">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#03fcad] text-slate-950 font-black flex items-center justify-center text-xs sm:text-sm">
@@ -329,21 +324,48 @@ function SoloStreamStage({
                 ))}
             </div>
 
-            {/* 4. BOTTOM CHAT & GIFT CONTROLS (pb-20 elevates UI above browser toolbar) */}
+            {/* 4. BOTTOM CHAT & GIFT CONTROLS */}
             <div className="relative z-10 p-4 pb-20 sm:pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
                 <div className="h-[110px] sm:h-[130px] overflow-y-auto flex flex-col-reverse gap-1.5 pr-2 no-scrollbar">
                     <div className="flex flex-col items-start gap-1.5">
-                        {textChatMessages.map((msg, idx) => (
-                            <div
-                                key={idx}
-                                className="bg-black/60 backdrop-blur-md border border-white/10 rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm"
-                            >
-                                <span className="font-bold text-[#03fcad] mr-1.5">
-                                    {msg.from?.identity ? msg.from.identity.replace(/^host_/, '') : 'Viewer'}:
-                                </span>
-                                <span className="text-white font-medium">{msg.message}</span>
-                            </div>
-                        ))}
+                        {chatMessages.map((msg, idx) => {
+                            let isGiftMsg = false;
+                            let displaySender = msg.from?.identity ? msg.from.identity.replace(/^host_/, '') : 'Viewer';
+                            let messageContent = msg.message;
+
+                            try {
+                                const parsed = JSON.parse(msg.message);
+                                if (parsed.isGift) {
+                                    isGiftMsg = true;
+                                    displaySender = parsed.sender || displaySender;
+                                    messageContent = parsed.displayText || `${displaySender} sent a gift! ${parsed.icon}`;
+                                }
+                            } catch {
+                                // Standard text chat message
+                            }
+
+                            return (
+                                <div
+                                    key={idx}
+                                    className={`bg-black/60 backdrop-blur-md border rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm ${
+                                        isGiftMsg ? 'border-amber-400/50 bg-amber-500/10' : 'border-white/10'
+                                    }`}
+                                >
+                                    {isGiftMsg ? (
+                                        <span className="font-bold text-amber-300">
+                                            🎁 {messageContent}
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <span className="font-bold text-[#03fcad] mr-1.5">
+                                                {displaySender}:
+                                            </span>
+                                            <span className="text-white font-medium">{messageContent}</span>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 
