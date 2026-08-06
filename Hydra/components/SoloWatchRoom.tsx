@@ -9,6 +9,7 @@ import {
     useRemoteParticipants,
     useLocalParticipant,
     useRoomContext,
+    useChat, // 🟢 LiveKit Chat Hook
 } from '@livekit/components-react';
 import { Track, RoomEvent, ConnectionState } from 'livekit-client';
 import SoloStreamSetupModal from '@/components/SoloStreamSetupModal';
@@ -65,6 +66,9 @@ function SoloStreamStage({
     const room = useRoomContext();
     const router = useRouter();
 
+    // 🟢 LiveKit official chat hook
+    const { chatMessages, send } = useChat();
+
     const tracks = useTracks([
         { source: Track.Source.Camera, withPlaceholder: true },
         { source: Track.Source.ScreenShare, withPlaceholder: false },
@@ -74,7 +78,6 @@ function SoloStreamStage({
     const { localParticipant, isCameraEnabled } = useLocalParticipant();
 
     const [setupModalOpen, setSetupModalOpen] = useState(isHost);
-    const [chatMessages, setChatMessages] = useState<{ id: string; user: string; text: string }[]>([]);
     const [chatInput, setChatInput] = useState('');
     const [sessionCoins, setSessionCoins] = useState(0);
     const [showGiftModal, setShowGiftModal] = useState(false);
@@ -121,12 +124,10 @@ function SoloStreamStage({
             }
         }
 
-        // Leave LiveKit session
         if (room) {
             await room.disconnect();
         }
 
-        // Navigate back to Homepage
         router.push('/');
     };
 
@@ -179,41 +180,73 @@ function SoloStreamStage({
         }
     };
 
-    const handleSendChat = (e: React.FormEvent) => {
+    // 🟢 1. CHAT SENDER
+    const handleSendChat = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!chatInput.trim()) return;
 
-        const newMsg = {
-            id: Math.random().toString(),
-            user: localParticipant?.identity || 'Viewer',
-            text: chatInput.trim(),
-        };
-
-        setChatMessages((prev) => [...prev.slice(-20), newMsg]);
+        const msg = chatInput.trim();
         setChatInput('');
+
+        try {
+            // LiveKit handle sends plain text or JSON payload across room
+            await send(msg);
+        } catch (err) {
+            console.error('Error sending LiveKit chat:', err);
+        }
     };
 
-    const handleSendGift = (icon: string, coinCost: number) => {
-        setSessionCoins((prev) => prev + coinCost);
-
-        const giftId = Math.random().toString();
-        setFloatingGifts((prev) => [...prev, { id: giftId, icon }]);
-
-        setTimeout(() => {
-            setFloatingGifts((prev) => prev.filter((g) => g.id !== giftId));
-        }, 2000);
-
-        setChatMessages((prev) => [
-            ...prev.slice(-20),
-            {
-                id: giftId,
-                user: '🎁 GIFT ALERT',
-                text: `${localParticipant?.identity || 'Someone'} sent ${icon} (${coinCost} Coins)!`,
-            },
-        ]);
+    // 🟢 2. GIFT SENDER (Broadcasting gift JSON string through useChat)
+    const handleSendGift = async (icon: string, coinCost: number) => {
+        const giftId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const senderName = localParticipant?.identity?.replace(/^host_/, '') || (isHost ? hostName : 'Viewer');
 
         setShowGiftModal(false);
+
+        const giftPayload = JSON.stringify({
+            isGift: true,
+            giftId,
+            icon,
+            coinCost,
+            sender: senderName,
+        });
+
+        try {
+            await send(giftPayload);
+        } catch (err) {
+            console.error('Error broadcasting gift:', err);
+        }
     };
+
+    // 🟢 3. LISTEN FOR INCOMING GIFTS
+    useEffect(() => {
+        if (chatMessages.length === 0) return;
+        const latestMsg = chatMessages[chatMessages.length - 1];
+
+        try {
+            const parsed = JSON.parse(latestMsg.message);
+            if (parsed.isGift) {
+                setSessionCoins((prev) => prev + parsed.coinCost);
+                setFloatingGifts((prev) => [...prev, { id: parsed.giftId, icon: parsed.icon }]);
+
+                setTimeout(() => {
+                    setFloatingGifts((prev) => prev.filter((g) => g.id !== parsed.giftId));
+                }, 2000);
+            }
+        } catch {
+            // Regular chat message string
+        }
+    }, [chatMessages]);
+
+    // 🟢 4. SEPARATE CHAT MESSAGES FROM GIFT PAYLOADS
+    const textChatMessages = chatMessages.filter((msg) => {
+        try {
+            const parsed = JSON.parse(msg.message);
+            return !parsed.isGift;
+        } catch {
+            return true;
+        }
+    });
 
     const hasVideoTrack = cameraTrack && cameraTrack.publication && !cameraTrack.publication.isMuted;
 
@@ -225,7 +258,6 @@ function SoloStreamStage({
                 {hasVideoTrack ? (
                     <VideoTrack
                         trackRef={cameraTrack}
-                        /* 🟢 object-contain ensures full 9:16 mobile frame fits without zooming/cropping */
                         className="w-full h-full object-contain max-h-full max-w-full"
                     />
                 ) : (
@@ -308,15 +340,15 @@ function SoloStreamStage({
             <div className="relative z-10 p-3 pb-4 sm:p-4 sm:pb-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col gap-3">
                 <div className="h-[130px] overflow-y-auto flex flex-col-reverse gap-1.5 pr-2 no-scrollbar">
                     <div className="flex flex-col items-start gap-1.5">
-                        {chatMessages.map((msg) => (
+                        {textChatMessages.map((msg, idx) => (
                             <div
-                                key={msg.id}
+                                key={idx}
                                 className="bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm"
                             >
                                 <span className="font-bold text-[#03fcad] mr-1.5">
-                                    {msg.user}:
+                                    {msg.from?.identity ? msg.from.identity.replace(/^host_/, '') : 'Viewer'}:
                                 </span>
-                                <span className="text-white font-medium">{msg.text}</span>
+                                <span className="text-white font-medium">{msg.message}</span>
                             </div>
                         ))}
                     </div>
