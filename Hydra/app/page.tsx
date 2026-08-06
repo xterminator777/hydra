@@ -130,15 +130,15 @@ export default function DirectoryPage() {
         <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold tracking-wide">
           <span className="inline-block w-2 h-2 rounded-full bg-[#03fcad] animate-pulse" />
           <span className="text-gray-300">Welcome to the future of live streaming on</span>
-          
+
           {/* Brand Name with Google Exo & #03fcad */}
-          <span 
+          <span
             className="font-black tracking-wider uppercase text-base sm:text-lg drop-shadow-[0_0_12px_rgba(3,252,173,0.4)]"
             style={{ color: '#03fcad' }}
           >
             NeoPulse.live
           </span>
-          
+
           <span className="hidden sm:inline text-gray-400">| Interactive Multi-Seat Stages</span>
         </div>
       </div>
@@ -152,8 +152,16 @@ export default function DirectoryPage() {
               Discover active broadcasts across technology, gaming, music, and more.
             </p>
           </div>
-
+          
           <div className="flex items-center gap-3">
+          <Link
+            href="/wallet"
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-yellow-500/40 text-yellow-400 rounded-xl transition text-xs font-bold shadow-[0_0_10px_rgba(234,179,8,0.1)] hover:border-yellow-400 cursor-pointer"
+          >
+            <span>🪙</span>
+            <span>My Wallet</span>
+          </Link>
+          
             {/* User Profile / Handle Button */}
             <button
               onClick={() => {
@@ -216,11 +224,10 @@ export default function DirectoryPage() {
             <button
               key={cat.slug}
               onClick={() => setSelectedCategory(cat.slug)}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition ${
-                selectedCategory === cat.slug
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition ${selectedCategory === cat.slug
                   ? 'bg-white text-black font-bold'
                   : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white border border-gray-800'
-              }`}
+                }`}
             >
               {cat.name}
             </button>
