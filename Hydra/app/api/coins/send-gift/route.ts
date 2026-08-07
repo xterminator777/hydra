@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // 1. Get Sender Wallet
+    // 1. Get Sender Wallet & Profile
     const { data: senderWallet, error: senderErr } = await supabase
       .from('wallets')
       .select('id, balance, paid_balance, promo_balance')
@@ -22,7 +22,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Sender wallet not found' }, { status: 404 });
     }
 
-    // Handle initial balances safely (fallback to balance if paid/promo are null)
+    // Fetch Sender's Profile for the Host's transaction log
+    const { data: senderProfile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const senderUsername = senderProfile?.username || 'user';
+
+    // Handle initial balances safely
     const paidBal = senderWallet.paid_balance ?? 0;
     const promoBal = senderWallet.promo_balance ?? senderWallet.balance ?? 0;
     const totalBalance = paidBal + promoBal;
@@ -47,11 +56,11 @@ export async function POST(req: NextRequest) {
     const newTotalBalance = newPromoBalance + newPaidBalance;
     const isPromoGift = promoDeduction > 0;
 
-    // 3. 🟢 Deduct from Sender (Updates balance, promo_balance, AND paid_balance)
+    // 3. Deduct from Sender Wallet
     const { error: updateSenderErr } = await supabase
       .from('wallets')
       .update({
-        balance: newTotalBalance, // 👈 Fixes traditional static balance column
+        balance: newTotalBalance,
         promo_balance: newPromoBalance,
         paid_balance: newPaidBalance,
       })
@@ -62,7 +71,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to update sender wallet' }, { status: 500 });
     }
 
-    // 4. Look up Host Profile
+    // 4. Look up Host Profile & Credit Host Wallet
+    let hostUserId: string | null = null;
+
     if (recipientUsername) {
       const { data: hostProfile } = await supabase
         .from('profiles')
@@ -71,7 +82,8 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (hostProfile) {
-        // Get Host Wallet
+        hostUserId = hostProfile.id;
+
         const { data: hostWallet } = await supabase
           .from('wallets')
           .select('id, balance, paid_balance, promo_balance')
@@ -85,11 +97,10 @@ export async function POST(req: NextRequest) {
           const newHostPromo = hostPromo + promoDeduction;
           const newHostTotal = newHostPaid + newHostPromo;
 
-          // 🟢 Credit Host Wallet
           await supabase
             .from('wallets')
             .update({
-              balance: newHostTotal, // 👈 Keeps host static balance in sync
+              balance: newHostTotal,
               paid_balance: newHostPaid,
               promo_balance: newHostPromo,
             })
@@ -98,14 +109,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. Record Transaction Log
+    const cleanGiftName = giftType || 'gift';
+    const targetHostName = recipientUsername || 'host';
+
+    // 5. 🟢 RECORD LOG FOR SENDER (e.g. "Sent Fire gift to @Maddog")
     await supabase.from('coin_transactions').insert({
       user_id: userId,
       amount: giftCost,
       type: 'gift_send',
+      description: `Sent ${cleanGiftName} gift to @${targetHostName}`,
       reference_id: roomName,
       is_promo: isPromoGift,
     });
+
+    // 6. 🟢 RECORD LOG FOR HOST (e.g. "Received Fire gift from @amunRa")
+    if (hostUserId) {
+      await supabase.from('coin_transactions').insert({
+        user_id: hostUserId,
+        amount: giftCost,
+        type: 'gift_receive',
+        description: `Received ${cleanGiftName} gift from @${senderUsername}`,
+        reference_id: roomName,
+        is_promo: isPromoGift,
+      });
+    }
 
     return NextResponse.json({
       success: true,
