@@ -13,6 +13,7 @@ import {
 } from '@livekit/components-react';
 import { Track, RoomEvent, ConnectionState, RemoteParticipant } from 'livekit-client';
 import SoloStreamSetupModal from '@/components/SoloStreamSetupModal';
+import { RechargeModal } from '@/components/RechargeModal'; // 🟢 Import RechargeModal
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
@@ -79,17 +80,37 @@ function SoloStreamStage({
     const [setupModalOpen, setSetupModalOpen] = useState(isHost);
     const [chatInput, setChatInput] = useState('');
     const [sessionCoins, setSessionCoins] = useState(0);
+    const [userCoins, setUserCoins] = useState<number>(0); // 🟢 User Wallet Balance State
+    const [rechargeOpen, setRechargeOpen] = useState(false); // 🟢 Recharge Modal State
     const [showGiftModal, setShowGiftModal] = useState(false);
     const [floatingGifts, setFloatingGifts] = useState<{ id: string; icon: string }[]>([]);
     const [publishing, setPublishing] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
 
-    // 🟢 1. FALLBACK: IF HOST UNEXPECTEDLY DROPS (Closes tab)
+    // 🟢 FETCH LOGGED-IN USER WALLET BALANCE FROM SUPABASE
+    useEffect(() => {
+        async function fetchUserWallet() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: wallet } = await supabase
+                    .from('wallets')
+                    .select('balance')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (wallet) {
+                    setUserCoins(wallet.balance);
+                }
+            }
+        }
+        fetchUserWallet();
+    }, []);
+
+    // FALLBACK: IF HOST UNEXPECTEDLY DROPS
     useEffect(() => {
         if (!room || isHost) return;
 
         const handleParticipantDisconnected = (participant: RemoteParticipant) => {
-            // If the person who disconnected matches the host's identity, boot the viewer
             if (participant.identity === hostName || participant.identity.includes(hostName)) {
                 console.log('Host disconnected. Redirecting viewer to home...');
                 router.push('/');
@@ -124,7 +145,6 @@ function SoloStreamStage({
 
         if (isHost) {
             try {
-                // 🟢 2. BROADCAST STREAM END TO ALL VIEWERS INSTANTLY
                 await send(JSON.stringify({ isStreamEnd: true }));
             } catch (err) {
                 console.error('Error broadcasting stream end:', err);
@@ -211,29 +231,66 @@ function SoloStreamStage({
         }
     };
 
-    const handleSendGift = async (icon: string, coinCost: number) => {
-        const giftId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        const senderName = localParticipant?.identity?.replace(/^host_/, '') || (isHost ? hostName : 'Viewer');
+    // 🟢 UPDATED GIFT SENDER: Checks user coin balance & deducts transaction via backend API
+    const handleSendGift = async (icon: string, coinCost: number, giftType: string = 'gift') => {
+        const { data: { user } } = await supabase.auth.getUser();
 
-        setShowGiftModal(false);
+        if (!user) {
+            alert('Please log in to send gifts!');
+            return;
+        }
 
-        const giftPayload = JSON.stringify({
-            isGift: true,
-            giftId,
-            icon,
-            coinCost,
-            sender: senderName,
-            displayText: `${senderName} sent a gift! ${icon}`,
-        });
+        // Open recharge modal if balance is too low
+        if (userCoins < coinCost) {
+            setShowGiftModal(false);
+            setRechargeOpen(true);
+            return;
+        }
 
         try {
+            // Process Supabase Wallet Transaction
+            const response = await fetch('/api/coins/send-gift', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user.id,
+                    recipientUsername: hostName,
+                    giftCost: coinCost,
+                    giftType,
+                    roomName,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.error || 'Failed to send gift.');
+                return;
+            }
+
+            // Update local user coin balance
+            setUserCoins(data.newBalance);
+            setShowGiftModal(false);
+
+            const giftId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+            const senderName = localParticipant?.identity?.replace(/^host_/, '') || (isHost ? hostName : 'Viewer');
+
+            const giftPayload = JSON.stringify({
+                isGift: true,
+                giftId,
+                icon,
+                coinCost,
+                sender: senderName,
+                displayText: `${senderName} sent a gift! ${icon}`,
+            });
+
             await send(giftPayload);
         } catch (err) {
-            console.error('Error broadcasting gift:', err);
+            console.error('Error executing gift transaction:', err);
         }
     };
 
-    // 🟢 3. LISTEN FOR INCOMING CHAT EVENTS (GIFTS & END STREAM)
+    // LISTEN FOR INCOMING CHAT EVENTS
     useEffect(() => {
         if (chatMessages.length === 0) return;
         const latestMsg = chatMessages[chatMessages.length - 1];
@@ -241,7 +298,6 @@ function SoloStreamStage({
         try {
             const parsed = JSON.parse(latestMsg.message);
             
-            // Catch Stream End Broadcast
             if (parsed.isStreamEnd && !isHost) {
                 console.log('Host ended stream. Redirecting viewer...');
                 router.push('/');
@@ -275,7 +331,6 @@ function SoloStreamStage({
                         className="w-full h-full object-contain max-h-full max-w-full"
                     />
                 ) : (
-                    /* 🟢 4. SEPARATE HOST VS VIEWER FALLBACK UI */
                     <div className="flex flex-col items-center justify-center gap-3 text-center max-w-xs z-10 my-auto bg-slate-900/90 border border-white/10 p-5 rounded-2xl backdrop-blur-md shadow-2xl">
                         {isHost ? (
                             <>
@@ -344,6 +399,19 @@ function SoloStreamStage({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* 🟢 RECHARGE COIN CHIP (Opens RechargeModal) */}
+                    <button
+                        onClick={() => setRechargeOpen(true)}
+                        className="bg-black/60 hover:bg-zinc-800 backdrop-blur-md px-2.5 py-1 rounded-full border border-amber-500/40 text-[10px] sm:text-[11px] font-mono font-bold text-amber-400 flex items-center gap-1 transition cursor-pointer"
+                        title="Recharge Coins"
+                    >
+                        <span>🪙</span>
+                        <span>{userCoins}</span>
+                        <span className="text-[8px] bg-amber-500/20 text-amber-300 px-1 rounded uppercase">
+                            +Add
+                        </span>
+                    </button>
+
                     <div className="bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] sm:text-[11px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
                         <span
                             className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-red-500 animate-pulse' : 'bg-amber-400'
@@ -458,14 +526,14 @@ function SoloStreamStage({
 
                         <div className="grid grid-cols-4 gap-2 sm:gap-3">
                             {[
-                                { name: 'Rose', icon: '🌹', coins: 10 },
-                                { name: 'Fire', icon: '🔥', coins: 50 },
-                                { name: 'Crown', icon: '👑', coins: 200 },
-                                { name: 'Rocket', icon: '🚀', coins: 500 },
+                                { name: 'Rose', icon: '🌹', coins: 10, type: 'rose' },
+                                { name: 'Fire', icon: '🔥', coins: 50, type: 'fire' },
+                                { name: 'Crown', icon: '👑', coins: 200, type: 'crown' },
+                                { name: 'Rocket', icon: '🚀', coins: 500, type: 'rocket' },
                             ].map((gift) => (
                                 <button
                                     key={gift.name}
-                                    onClick={() => handleSendGift(gift.icon, gift.coins)}
+                                    onClick={() => handleSendGift(gift.icon, gift.coins, gift.type)}
                                     className="bg-slate-950 border border-slate-800 hover:border-[#03fcad] rounded-xl sm:rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center gap-1 transition cursor-pointer"
                                 >
                                     <span className="text-xl sm:text-2xl">{gift.icon}</span>
@@ -491,6 +559,14 @@ function SoloStreamStage({
                     setSetupModalOpen(false);
                     handleEnableMedia();
                 }}
+            />
+
+            {/* 7. 🟢 RECHARGE COINS MODAL */}
+            <RechargeModal
+                isOpen={rechargeOpen}
+                onClose={() => setRechargeOpen(false)}
+                userId={currentUserId || ''}
+                onBalanceUpdated={(newBalance) => setUserCoins(newBalance)}
             />
         </div>
     );

@@ -1,98 +1,118 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { userId, recipientUsername, giftCost, giftType, roomName } = await request.json();
+    const { userId, recipientUsername, giftCost, giftType, roomName } = await req.json();
 
-    if (!userId || !giftCost || giftCost <= 0) {
-      return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 });
-    }
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // 1. Fetch sender's wallet balance
-    const { data: senderWallet, error: walletErr } = await supabase
+    // 1. Get Sender Wallet
+    const { data: senderWallet, error: senderErr } = await supabase
       .from('wallets')
-      .select('balance')
+      .select('id, balance, paid_balance, promo_balance')
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (walletErr || !senderWallet) {
+    if (senderErr || !senderWallet) {
+      console.error('Sender wallet error:', senderErr?.message);
       return NextResponse.json({ error: 'Sender wallet not found' }, { status: 404 });
     }
 
-    if (senderWallet.balance < giftCost) {
-      return NextResponse.json(
-        { error: 'Insufficient coin balance!' },
-        { status: 402 }
-      );
+    // Handle initial balances safely (fallback to balance if paid/promo are null)
+    const paidBal = senderWallet.paid_balance ?? 0;
+    const promoBal = senderWallet.promo_balance ?? senderWallet.balance ?? 0;
+    const totalBalance = paidBal + promoBal;
+
+    if (totalBalance < giftCost) {
+      return NextResponse.json({ error: 'Insufficient coin balance' }, { status: 400 });
     }
 
-    // 2. Deduct coins from sender
-    const newSenderBalance = senderWallet.balance - giftCost;
-    await supabase
+    // 2. Calculate deduction order (Spend promo coins first, then paid coins)
+    let promoDeduction = 0;
+    let paidDeduction = 0;
+
+    if (promoBal >= giftCost) {
+      promoDeduction = giftCost;
+    } else {
+      promoDeduction = promoBal;
+      paidDeduction = giftCost - promoDeduction;
+    }
+
+    const newPromoBalance = promoBal - promoDeduction;
+    const newPaidBalance = paidBal - paidDeduction;
+    const newTotalBalance = newPromoBalance + newPaidBalance;
+    const isPromoGift = promoDeduction > 0;
+
+    // 3. 🟢 Deduct from Sender (Updates balance, promo_balance, AND paid_balance)
+    const { error: updateSenderErr } = await supabase
       .from('wallets')
-      .update({ balance: newSenderBalance, updated_at: new Date().toISOString() })
-      .eq('user_id', userId);
+      .update({
+        balance: newTotalBalance, // 👈 Fixes traditional static balance column
+        promo_balance: newPromoBalance,
+        paid_balance: newPaidBalance,
+      })
+      .eq('id', senderWallet.id);
 
-    // 3. Log sender transaction
-    await supabase.from('coin_transactions').insert({
-      user_id: userId,
-      amount: -giftCost,
-      type: 'gift_send',
-      reference_id: roomName,
-      description: `Sent ${giftType} gift to @${recipientUsername || 'host'}`,
-    });
+    if (updateSenderErr) {
+      console.error('Failed to update sender wallet:', updateSenderErr.message);
+      return NextResponse.json({ error: 'Failed to update sender wallet' }, { status: 500 });
+    }
 
-    // 4. 🟢 CREDIT RECIPIENT'S WALLET
+    // 4. Look up Host Profile
     if (recipientUsername) {
-      // Resolve recipient username to profile user_id
-      const { data: recipientProfile } = await supabase
+      const { data: hostProfile } = await supabase
         .from('profiles')
         .select('id')
-        .eq('username', recipientUsername)
+        .ilike('username', recipientUsername)
         .maybeSingle();
 
-      if (recipientProfile?.id) {
-        const recipientId = recipientProfile.id;
-
-        // Fetch recipient wallet
-        const { data: recipientWallet } = await supabase
+      if (hostProfile) {
+        // Get Host Wallet
+        const { data: hostWallet } = await supabase
           .from('wallets')
-          .select('balance')
-          .eq('user_id', recipientId)
+          .select('id, balance, paid_balance, promo_balance')
+          .eq('user_id', hostProfile.id)
           .maybeSingle();
 
-        const currentRecipientBalance = recipientWallet?.balance || 0;
-        const newRecipientBalance = currentRecipientBalance + giftCost;
+        if (hostWallet) {
+          const hostPaid = hostWallet.paid_balance ?? 0;
+          const hostPromo = hostWallet.promo_balance ?? 0;
+          const newHostPaid = hostPaid + paidDeduction;
+          const newHostPromo = hostPromo + promoDeduction;
+          const newHostTotal = newHostPaid + newHostPromo;
 
-        // Credit recipient wallet
-        await supabase.from('wallets').upsert(
-          {
-            user_id: recipientId,
-            balance: newRecipientBalance,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
-
-        // Log recipient transaction
-        await supabase.from('coin_transactions').insert({
-          user_id: recipientId,
-          amount: giftCost,
-          type: 'gift_receive',
-          reference_id: roomName,
-          description: `Received ${giftType} gift from user`,
-        });
+          // 🟢 Credit Host Wallet
+          await supabase
+            .from('wallets')
+            .update({
+              balance: newHostTotal, // 👈 Keeps host static balance in sync
+              paid_balance: newHostPaid,
+              promo_balance: newHostPromo,
+            })
+            .eq('id', hostWallet.id);
+        }
       }
     }
 
-    return NextResponse.json({ success: true, newBalance: newSenderBalance });
+    // 5. Record Transaction Log
+    await supabase.from('coin_transactions').insert({
+      user_id: userId,
+      amount: giftCost,
+      type: 'gift_send',
+      reference_id: roomName,
+      is_promo: isPromoGift,
+    });
+
+    return NextResponse.json({
+      success: true,
+      newBalance: newTotalBalance,
+    });
   } catch (err: any) {
-    console.error('Error processing gift transaction:', err);
-    return NextResponse.json({ error: err.message || 'Transaction failed' }, { status: 500 });
+    console.error('Unhandled error in send-gift:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
