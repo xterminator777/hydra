@@ -87,6 +87,40 @@ function SoloStreamStage({
     const [publishing, setPublishing] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
 
+    // 🟢 Inside SoloStreamStage function:
+
+    const [copied, setCopied] = useState(false);
+
+    const handleShareStream = async () => {
+        // Construct the direct shareable URL
+        const shareUrl = window.location.href;
+        const shareData = {
+            title: `${hostName}'s Solo Live`,
+            text: `Watch ${hostName} live right now on NeoPulse!`,
+            url: shareUrl,
+        };
+
+        // 1. Mobile Native Share Sheet (iOS / Android)
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData);
+                return;
+            } catch (err) {
+                // User cancelled share or API failed, fall back to copy clipboard
+                console.log('Native share closed or unavailable, copying link...');
+            }
+        }
+
+        // 2. Desktop Fallback (Copy to Clipboard)
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy link:', err);
+        }
+    };
+
     // 🟢 FETCH LOGGED-IN USER WALLET BALANCE FROM SUPABASE
     useEffect(() => {
         async function fetchUserWallet() {
@@ -297,7 +331,7 @@ function SoloStreamStage({
 
         try {
             const parsed = JSON.parse(latestMsg.message);
-            
+
             if (parsed.isStreamEnd && !isHost) {
                 console.log('Host ended stream. Redirecting viewer...');
                 router.push('/');
@@ -420,6 +454,26 @@ function SoloStreamStage({
                         {isConnected ? `${participants.length + 1} live` : 'Connecting'}
                     </div>
 
+
+                    {/* 🟢 3. SHARE LINK BUTTON */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={handleShareStream}
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white text-xs hover:bg-zinc-800 transition cursor-pointer active:scale-95"
+                            title="Share Stream"
+                        >
+                            🔗
+                        </button>
+
+                        {/* Copy Toast Notification */}
+                        {copied && (
+                            <div className="absolute top-10 right-0 bg-[#03fcad] text-slate-950 font-black text-[10px] px-2 py-1 rounded-md shadow-lg whitespace-nowrap animate-fade-in">
+                                Link Copied! 📋
+                            </div>
+                        )}
+                    </div>
+                    
                     <button
                         type="button"
                         onClick={handleEndStream}
@@ -465,9 +519,8 @@ function SoloStreamStage({
                             return (
                                 <div
                                     key={idx}
-                                    className={`bg-black/60 backdrop-blur-md border rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm ${
-                                        isGiftMsg ? 'border-amber-400/50 bg-amber-500/10' : 'border-white/10'
-                                    }`}
+                                    className={`bg-black/60 backdrop-blur-md border rounded-lg px-2.5 py-1 text-xs text-left max-w-[85%] break-words shadow-sm ${isGiftMsg ? 'border-amber-400/50 bg-amber-500/10' : 'border-white/10'
+                                        }`}
                                 >
                                     {isGiftMsg ? (
                                         <span className="font-bold text-amber-300">
